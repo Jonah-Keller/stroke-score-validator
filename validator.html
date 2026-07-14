@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stroke Bedside Score — External Validator</title>
+<style>
+  :root { --bg:#f7f8fa; --card:#fff; --line:#e2e4e8; --ink:#1a1a1a; --mut:#666;
+          --blue:#4a72b0; --green:#2e8b57; --red:#d64545; --badbg:#fdf1f1; --okbg:#f2fbf4; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,Segoe UI,Roboto,sans-serif; margin:0; padding:24px;
+         background:var(--bg); color:var(--ink); max-width:1080px; margin:auto; }
+  h1 { margin:0 0 2px; font-size:22px; } h2 { margin:28px 0 8px; border-bottom:2px solid var(--line); padding-bottom:6px; }
+  .sub { color:var(--mut); margin-bottom:16px; font-size:14px; }
+  #drop { border:2px dashed #b9c2cf; border-radius:12px; padding:34px; text-align:center;
+          background:var(--card); cursor:pointer; transition:.15s; }
+  #drop.drag { border-color:var(--blue); background:#eef3fb; }
+  #drop b { color:var(--blue); }
+  .muted { color:var(--mut); } .note { color:#a15c00; font-size:12px; }
+  .err { color:#a1150c; } .big { font-size:18px; font-weight:600; }
+  table { border-collapse:collapse; width:100%; background:var(--card); font-size:13px; }
+  th,td { border:1px solid #e6e8ec; padding:5px 9px; text-align:left; }
+  th { background:#f0f2f5; }
+  tr.ok td { background:var(--okbg); } tr.bad td { background:var(--badbg); } tr.mut td { color:#999; background:#fafafa; }
+  .scroll { overflow-x:auto; }
+  .cards { display:flex; gap:12px; flex-wrap:wrap; margin:14px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 18px; min-width:120px; }
+  .card .num { font-size:26px; font-weight:700; } .card .lbl { color:var(--mut); font-size:12px; }
+  .badge { background:#d33; color:#fff; border-radius:10px; padding:1px 9px; font-size:12px; }
+  .req { background:#7a5cff; color:#fff; border-radius:8px; padding:0 6px; font-size:10px; margin-left:6px; vertical-align:middle; }
+  .banner { padding:10px 14px; border-radius:8px; margin:10px 0; font-weight:600; }
+  .banner.bad { background:#fdecea; color:#a1150c; border:1px solid #f3b7b1; }
+  .maprow { display:grid; grid-template-columns:210px 260px 1fr; gap:10px; align-items:center;
+            padding:6px 0; border-bottom:1px solid #eef0f3; }
+  .maprow .vlabel { font-weight:600; font-size:13px; } .maprow .vlabel small { color:var(--mut); font-weight:400; }
+  select { width:100%; padding:5px; border:1px solid #c7ccd4; border-radius:6px; background:#fff; font-size:13px; }
+  .sample { font-size:12px; color:var(--mut); font-family:ui-monospace,Menlo,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .guessed select { border-color:var(--green); }
+  button { font-size:14px; padding:9px 18px; border-radius:8px; border:1px solid var(--blue);
+           background:var(--blue); color:#fff; cursor:pointer; }
+  button.sec { background:#fff; color:var(--blue); }
+  button:disabled { opacity:.5; cursor:default; }
+  .toolbar { display:flex; gap:10px; margin:16px 0; flex-wrap:wrap; align-items:center; }
+  .hidden { display:none; }
+  svg { max-width:100%; height:auto; font-family:sans-serif; font-size:11px; }
+  code { background:#eef0f3; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<h1>Stroke Bedside Score — External Validator</h1>
+<div class="sub">Drop your cohort file (CSV or Excel). Everything runs locally in your browser — no data leaves this page.</div>
+
+<div id="drop">
+  <div class="big">Drop a .csv / .tsv / .xlsx / .xls file here</div>
+  <div class="muted" style="margin-top:6px">or <b>click to choose a file</b></div>
+  <input id="file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" class="hidden">
+</div>
+<div id="loadmsg" class="note" style="margin-top:8px"></div>
+
+<div id="mapper" class="hidden">
+  <h2>Match your columns</h2>
+  <div class="sub">We guessed the best match for each study variable and show sample values. Confirm or change any dropdown. <span style="color:var(--green)">Green</span> = auto-matched.</div>
+  <div class="maprow" style="font-weight:700;border-bottom:2px solid var(--line)">
+    <div>Study variable</div><div>Your column</div><div>Sample values</div>
+  </div>
+  <div id="maprows"></div>
+  <div class="toolbar">
+    <label class="muted">Row ID column (optional):
+      <select id="idcol" style="width:auto;display:inline-block"></select></label>
+  </div>
+  <div class="toolbar">
+    <button id="run">Validate &amp; Score</button>
+    <button id="reset" class="sec">Start over</button>
+  </div>
+</div>
+
+<div id="results"></div>
+
+<script>
+/* =========================================================================
+   ===ENGINE START===   (pure, DOM-free — also unit-tested under node)
+   ========================================================================= */
+function V(name,label,type,o){ o=o||{}; return {name,label,type,
+  min:o.min, max:o.max, allowed:o.allowed||null,
+  required:!!o.required, allow_na:o.allow_na!==false,
+  max_missing_frac:o.max_missing_frac==null?1:o.max_missing_frac}; }
+
+const VARIABLE_SPEC = [
+  V("age","Age (years)","integer",{min:18,max:120,required:true}),
+  V("sex","Sex","categorical",{allowed:["Male","Female"]}),
+  V("bmi","BMI (kg/m^2)","continuous",{min:10,max:80}),
+  V("hx_htn","History: hypertension","binary"),
+  V("hx_dm2","History: diabetes (T2)","binary"),
+  V("hx_stroke","History: prior stroke","binary"),
+  V("hx_cancer","History: cancer","binary"),
+  V("hx_blood_thinners","Pre-stroke blood thinners","binary"),
+  V("hx_smoking","Smoking status","ordinal",{allowed:[0,1,2]}),
+  V("mrs_pre_stroke","Pre-stroke mRS","ordinal",{allowed:[0,1,2,3,4,5]}),
+  V("nihss","NIHSS at presentation","integer",{min:0,max:42,required:true}),
+  V("time_since_lkn_min","Time since last-known-normal (min)","continuous",{min:0,max:20160}),
+  V("tici","TICI (recoded 0-5)","ordinal",{allowed:[0,1,2,3,4,5],required:true}),
+  V("number_of_passes","Number of passes","integer",{min:0,max:10}),
+  V("thrombus_location","Thrombus location code","ordinal",{allowed:[0,1,2,3,4,5,6,7,8,9,10,11,12]}),
+  V("complication_ic_perforation","Complication: IC perforation","binary"),
+  V("complication_ic_dissection","Complication: IC dissection","binary"),
+  V("complication_access_site","Complication: access site","binary"),
+  V("mortality_hospital","In-hospital mortality","binary"),
+  V("mrs_90day","mRS at 90 days","ordinal",{allowed:[0,1,2,3,4,5,6],max_missing_frac:0.30}),
+  V("mrs_6month","mRS at 6 months","ordinal",{allowed:[0,1,2,3,4,5,6],max_missing_frac:0.40})
+];
+
+const LOGIC_RULES = [
+  {name:"death_implies_mrs6_90day", desc:"In-hospital death but 90-day mRS < 6 (should be 6 or blank).",
+   needs:["mortality_hospital","mrs_90day"],
+   fn:(r)=> r.mortality_hospital===1 && r.mrs_90day!=null && r.mrs_90day<6},
+  {name:"death_implies_mrs6_6month", desc:"In-hospital death but 6-month mRS < 6 (should be 6 or blank).",
+   needs:["mortality_hospital","mrs_6month"],
+   fn:(r)=> r.mortality_hospital===1 && r.mrs_6month!=null && r.mrs_6month<6},
+  {name:"mrs_no_resurrection", desc:"mRS = 6 (dead) at 90 days but < 6 (alive) at 6 months.",
+   needs:["mrs_90day","mrs_6month"],
+   fn:(r)=> r.mrs_90day===6 && r.mrs_6month!=null && r.mrs_6month<6},
+  {name:"passes_nonzero_if_treated", desc:"Number of passes = 0 but a TICI grade > 0 was recorded.",
+   needs:["number_of_passes","tici"],
+   fn:(r)=> r.number_of_passes===0 && r.tici!=null && r.tici>0},
+  {name:"nihss_integer", desc:"NIHSS recorded with a fractional (non-integer) value.",
+   needs:["nihss"], fn:(r)=> r.nihss!=null && (r.nihss%1!==0)}
+];
+
+const RISK_SCORE = {
+  points:{nihss:2, age:1, hx_cancer:22, number_of_passes:2, tici:-7},
+  intercept:1.5552664, scale_factor:20, threshold_pts:86,
+  equation:"(2 × nihss) + (1 × age) + (22 × hx_cancer) + (2 × number_of_passes) + (-7 × tici)",
+  outcome_var:"mrs_90day", good_cutoff:2, ref_auc:0.837
+};
+const scoreProb = s => 1/(1+Math.exp(-(RISK_SCORE.intercept - s/RISK_SCORE.scale_factor)));
+
+// numeric parse: "" / null -> null (missing); non-numeric -> NaN (coercion error)
+function pnum(x){
+  if (x==null) return null;
+  const s = String(x).trim();
+  if (s===""||/^(na|n\/a|\.)$/i.test(s)) return null;
+  const v = Number(s.replace(/,/g,""));
+  return Number.isNaN(v) ? NaN : v;
+}
+
+// ---- fuzzy header matching --------------------------------------------------
+const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g,"");
+const SYN = {
+  age:["age","ageyrs","ageyears","ageatadmission","patientage"],
+  sex:["sex","gender","patientsex"],
+  bmi:["bmi","bodymassindex"],
+  hx_htn:["hxhtn","hypertension","htn","hxhypertension"],
+  hx_dm2:["hxdm2","diabetes","dm","dm2","hxdiabetes","diabetesmellitus","t2dm"],
+  hx_stroke:["hxstroke","priorstroke","historystroke","previousstroke"],
+  hx_cancer:["hxcancer","cancer","malignancy","cancerhistory","cancerhx"],
+  hx_blood_thinners:["bloodthinners","anticoagulation","anticoagulant","antiplatelet","hxbloodthinners","doac"],
+  hx_smoking:["smoking","smoker","hxsmoking","tobacco"],
+  mrs_pre_stroke:["mrsprestroke","baselinemrs","premrs","prestrokemrs"],
+  nihss:["nihss","nih","nihssbaseline","nihstroke","strokeseverity","admissionnihss"],
+  time_since_lkn_min:["timesincelkn","lkn","lastknownnormal","lkntime","timelkn","onsettotime"],
+  tici:["tici","mtici","ticiscore","ticigrade","reperfusion","recanalization"],
+  number_of_passes:["passes","numberofpasses","npasses","passcount","attempts","thrombectomypasses"],
+  thrombus_location:["thrombuslocation","occlusionsite","clotlocation","vesselocclusion","location","occlusion"],
+  complication_ic_perforation:["perforation","icperforation","complicationperforation"],
+  complication_ic_dissection:["dissection","icdissection"],
+  complication_access_site:["accesssite","accesscomplication","groincomplication"],
+  mortality_hospital:["mortality","inhospitalmortality","death","died","hospitaldeath","expired"],
+  mrs_90day:["mrs90","mrs90day","mrs90d","rankin90","mrs3month","mrsat90","threemonthmrs","mrs090"],
+  mrs_6month:["mrs6month","mrs6mo","mrs180","sixmonthmrs","mrs6m","mrs6"]
+};
+function bigrams(s){ const b={}; for(let i=0;i<s.length-1;i++){const g=s.slice(i,i+2); b[g]=(b[g]||0)+1;} return b; }
+function dice(a,b){ if(!a.length||!b.length) return 0; const A=bigrams(a),B=bigrams(b); let inter=0,na=0,nb=0;
+  for(const k in A){na+=A[k]; if(B[k]) inter+=Math.min(A[k],B[k]);} for(const k in B) nb+=B[k];
+  return (2*inter)/(na+nb); }
+function scoreMatch(colNorm, v){
+  const vn = norm(v.name); if (colNorm===vn) return 1;
+  const syns = SYN[v.name]||[];
+  if (syns.includes(colNorm)) return 0.96;
+  let best = 0;
+  for (const s of [vn,...syns]){
+    if (colNorm.includes(s)||s.includes(colNorm)){
+      const r = Math.min(colNorm.length,s.length)/Math.max(colNorm.length,s.length);
+      best = Math.max(best, 0.75+0.2*r);
+    }
+    best = Math.max(best, 0.7*dice(colNorm,s));
+  }
+  return best;
+}
+function suggestMap(headers){
+  const cols = headers.map(h=>({raw:h, n:norm(h)}));
+  const map = {};
+  for (const v of VARIABLE_SPEC){
+    let bestCol=null, bestS=0;
+    for (const c of cols){ const s=scoreMatch(c.n, v); if (s>bestS){bestS=s; bestCol=c.raw;} }
+    map[v.name] = (bestS>=0.55) ? bestCol : null;
+  }
+  return map;   // {canonical: headerName|null}
+}
+
+// ---- AUC (Mann-Whitney), higher score predicts positive ---------------------
+function auc(scores, pos){
+  const pairs=[]; for(let i=0;i<scores.length;i++) if(scores[i]!=null&&!Number.isNaN(scores[i])&&pos[i]!=null) pairs.push([scores[i],pos[i]]);
+  const np=pairs.filter(p=>p[1]).length, nn=pairs.length-np; if(!np||!nn) return null;
+  // average ranks
+  const idx=pairs.map((p,i)=>i).sort((a,b)=>pairs[a][0]-pairs[b][0]);
+  const ranks=new Array(pairs.length); let i=0;
+  while(i<idx.length){ let j=i; while(j+1<idx.length && pairs[idx[j+1]][0]===pairs[idx[i]][0]) j++;
+    const r=(i+j)/2+1; for(let k=i;k<=j;k++) ranks[idx[k]]=r; i=j+1; }
+  let sp=0; for(let k=0;k<pairs.length;k++) if(pairs[k][1]) sp+=ranks[k];
+  return (sp - np*(np+1)/2)/(np*nn);
+}
+
+// ---- main validation --------------------------------------------------------
+// rows: array of objects keyed by original header. map: {canonical: header|null}.
+function runValidation(rows, map, idCol){
+  const n = rows.length;
+  const rowIds = rows.map((r,i)=> (idCol && r[idCol]!=null && String(r[idCol])!=="") ? String(r[idCol]) : String(i+1));
+  const exceptions = [];
+  const add=(i,check,variable,value,expected)=>exceptions.push({row_id:rowIds[i],row_num:i+1,check,variable,value:(value==null?"":String(value)),expected});
+  const varSummary=[]; const presentMap={}; const missingRequired=[];
+
+  for (const sp of VARIABLE_SPEC){
+    const src = map[sp.name];
+    if (!src){ if(sp.required) missingRequired.push(sp.name);
+      varSummary.push({variable:sp.name,mapped_to:"(none)",present:false,n:0,n_missing:null,pct_missing:null,
+        n_type_err:null,n_range_err:null, status: sp.required?"MISSING (required)":"not provided"}); continue; }
+    presentMap[sp.name]=src;
+    const raw = rows.map(r=>r[src]);
+    let nMissing=0,nType=0,nRange=0;
+    const numTypes=["continuous","integer","binary","ordinal"];
+    for (let i=0;i<n;i++){
+      const cell=raw[i];
+      const isMiss = cell==null || String(cell).trim()==="" || /^(na|n\/a|\.)$/i.test(String(cell).trim());
+      if (isMiss){ nMissing++; if(!sp.allow_na) add(i,"missing",sp.name,null,"non-missing value"); continue; }
+      if (numTypes.includes(sp.type)){
+        const v=pnum(cell);
+        if (Number.isNaN(v)){ add(i,"type",sp.name,cell,"numeric value"); nType++; continue; }
+        if (sp.type==="binary"){ if(v!==0&&v!==1){ add(i,"allowed",sp.name,cell,"0 or 1"); nRange++; } }
+        else if (sp.allowed){ if(!sp.allowed.includes(v)){ add(i,"allowed",sp.name,cell,"one of {"+sp.allowed.join(",")+"}"); nRange++; } }
+        else { const lo=sp.min!=null&&v<sp.min, hi=sp.max!=null&&v>sp.max;
+          if(lo||hi){ add(i,"range",sp.name,cell,"["+(sp.min==null?"-Inf":sp.min)+", "+(sp.max==null?"Inf":sp.max)+"]"); nRange++; }
+          if(sp.type==="integer"&&v%1!==0){ add(i,"type",sp.name,cell,"whole number"); nType++; } }
+      } else if (sp.type==="categorical"&&sp.allowed){
+        const s=String(cell).trim(); if(!sp.allowed.includes(s)){ add(i,"allowed",sp.name,cell,"one of {"+sp.allowed.join(",")+"}"); nRange++; }
+      }
+    }
+    const pct=nMissing/n; const flags=[];
+    if(nType) flags.push(nType+" type"); if(nRange) flags.push(nRange+" out-of-range");
+    if(!sp.allow_na&&nMissing) flags.push("MISSING VALUES not allowed");
+    else if(pct>sp.max_missing_frac) flags.push("missingness "+Math.round(pct*100)+"% > "+Math.round(sp.max_missing_frac*100)+"% threshold");
+    varSummary.push({variable:sp.name,mapped_to:src,present:true,n,n_missing:nMissing,pct_missing:Math.round(pct*1000)/10,
+      n_type_err:nType,n_range_err:nRange, status: flags.length?flags.join("; "):"ok"});
+  }
+
+  // numeric canonical frame for logic rules + scoring
+  const cf = rows.map(()=>({}));
+  for (const canon in presentMap){ const sp=VARIABLE_SPEC.find(x=>x.name===canon); const src=presentMap[canon];
+    for(let i=0;i<n;i++){ const val=rows[i][src];
+      cf[i][canon] = (sp.type==="categorical") ? (val==null?null:String(val)) : pnum(val); } }
+
+  const ruleSummary=[];
+  for (const rl of LOGIC_RULES){
+    if (!rl.needs.every(x=>x in presentMap)){
+      ruleSummary.push({rule:rl.name,description:rl.desc,status:"skipped (needs "+rl.needs.filter(x=>!(x in presentMap)).join(", ")+")",n_violations:null}); continue; }
+    let nv=0; for(let i=0;i<n;i++){ let viol=false; try{viol=rl.fn(cf[i]);}catch(e){viol=false;} if(viol){ add(i,"logic",rl.name,"",rl.desc); nv++; } }
+    ruleSummary.push({rule:rl.name,description:rl.desc,status:nv?"VIOLATIONS":"pass",n_violations:nv});
+  }
+
+  // ---- arithmetic risk score ----
+  const needed=Object.keys(RISK_SCORE.points);
+  const missingInputs=needed.filter(v=>!(v in presentMap));
+  const score=new Array(n).fill(null); const good=new Array(n).fill(null);
+  let scorable=0;
+  if (!missingInputs.length){
+    for(let i=0;i<n;i++){ let ok=true,s=0;
+      for(const v of needed){ const x=cf[i][v]; if(x==null||Number.isNaN(x)){ok=false;break;} s+=RISK_SCORE.points[v]*x; }
+      if(ok){ score[i]=s; scorable++; } }
+  }
+  // outcome (good = mrs<=cutoff), with death->mrs6 cleaning
+  const ov=RISK_SCORE.outcome_var;
+  if (ov in presentMap){ for(let i=0;i<n;i++){ let mrs=cf[i][ov];
+      if((mrs==null||Number.isNaN(mrs)) && cf[i].mortality_hospital===1) mrs=6;
+      good[i] = (mrs==null||Number.isNaN(mrs)) ? null : (mrs<=RISK_SCORE.good_cutoff); } }
+
+  const thr=RISK_SCORE.threshold_pts;
+  const scored = rows.map((_,i)=>({row_id:rowIds[i],
+    risk_score: score[i]==null?"":Math.round(score[i]*10)/10,
+    prob_good_mrs2: score[i]==null?"":Math.round(scoreProb(score[i])*1000)/1000,
+    predicted: score[i]==null?"":(score[i]>=thr?"poor (>=thr)":"good (<thr)"),
+    observed: good[i]==null?"":(good[i]?"good":"poor")}));
+
+  const ev={scorable, excluded_missing:n-scorable, missing_inputs:missingInputs};
+  const poor = good.map(g=>g==null?null:!g);
+  let tp=0,fp=0,fn=0,tn=0,nEval=0;
+  for(let i=0;i<n;i++){ if(score[i]==null||good[i]==null) continue; nEval++;
+    const pp=score[i]>=thr; if(pp&&!good[i])tp++; else if(pp&&good[i])fp++; else if(!pp&&!good[i])fn++; else tn++; }
+  ev.n_eval=nEval;
+  if (nEval>0 && (tp+fn)>0 && (tn+fp)>0){
+    ev.auc=auc(score,poor); ev.sensitivity=tp/(tp+fn); ev.specificity=tn/(tn+fp);
+    ev.confusion={tp,fp,fn,tn};
+  }
+  return {exceptions,varSummary,ruleSummary,missingRequired,
+          score:{scored,eval:ev,scoreArr:score,good}, n, rowIds};
+}
+
+// ---- CSV / TSV parser (pure) ------------------------------------------------
+function parseDelimited(text){
+  text = text.replace(/^﻿/,"");
+  const firstLine = text.slice(0, text.indexOf("\n")<0?text.length:text.indexOf("\n"));
+  const delim = (firstLine.split("\t").length > firstLine.split(",").length) ? "\t" : ",";
+  const rows=[]; let field="",row=[],inq=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(inq){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inq=false; } else field+=c; }
+    else { if(c==='"') inq=true;
+      else if(c===delim){ row.push(field); field=""; }
+      else if(c==="\n"){ row.push(field); rows.push(row); row=[]; field=""; }
+      else if(c==="\r"){ /* skip */ }
+      else field+=c; } }
+  if(field!==""||row.length){ row.push(field); rows.push(row); }
+  const nonEmpty=rows.filter(r=>r.some(x=>String(x).trim()!==""));
+  if(!nonEmpty.length) return {headers:[],rows:[]};
+  const headers=nonEmpty[0].map(h=>String(h).trim());
+  const data=nonEmpty.slice(1).map(r=>{const o={}; headers.forEach((h,j)=>o[h]=r[j]==null?"":r[j]); return o;});
+  return {headers,rows:data};
+}
+/* ===ENGINE END=== */
+if (typeof module!=="undefined" && module.exports)
+  module.exports = {VARIABLE_SPEC,RISK_SCORE,LOGIC_RULES,runValidation,suggestMap,parseDelimited,auc,pnum,scoreProb};
+
+/* =========================================================================
+   UI  (browser only)
+   ========================================================================= */
+if (typeof document!=="undefined") (function(){
+  const $=s=>document.querySelector(s);
+  const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  let DATA=null; // {headers, rows}
+
+  // ---- Excel (.xlsx) reader using the browser's native inflate -------------
+  async function inflateRaw(u8){
+    if (typeof DecompressionStream==="undefined") throw new Error("no-inflate");
+    const ds=new DecompressionStream("deflate-raw");
+    const stream=new Blob([u8]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  async function readXlsx(buf){
+    const dv=new DataView(buf); const u8=new Uint8Array(buf);
+    // find End Of Central Directory
+    let eocd=-1; for(let i=buf.byteLength-22;i>=0;i--){ if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;} }
+    if(eocd<0) throw new Error("bad-zip");
+    let cdOff=dv.getUint32(eocd+16,true), cnt=dv.getUint16(eocd+10,true);
+    const files={}; let p=cdOff;
+    for(let k=0;k<cnt;k++){ if(dv.getUint32(p,true)!==0x02014b50) break;
+      const method=dv.getUint16(p+10,true), fnl=dv.getUint16(p+28,true),
+            extra=dv.getUint16(p+30,true), com=dv.getUint16(p+32,true),
+            lho=dv.getUint32(p+42,true);
+      const name=new TextDecoder().decode(u8.subarray(p+46,p+46+fnl));
+      const csize=dv.getUint32(p+20,true);            // compressed size from central directory (reliable)
+      files[name]={method,lho,csize}; p+=46+fnl+extra+com; }
+    async function read(name){ const f=files[name]; if(!f) return null;
+      const lfnl=dv.getUint16(f.lho+26,true), lex=dv.getUint16(f.lho+28,true);
+      const start=f.lho+30+lfnl+lex;
+      let compSize=f.csize || dv.getUint32(f.lho+18,true);   // prefer central-dir size
+      if(!compSize){ // last resort: scan to next PK signature
+        let e=start; while(e<buf.byteLength-4 && dv.getUint32(e,true)!==0x08074b50 && dv.getUint32(e,true)!==0x02014b50) e++;
+        compSize=e-start; }
+      const bytes=u8.subarray(start,start+compSize);
+      const out=(f.method===0)?bytes:await inflateRaw(bytes);
+      return new TextDecoder().decode(out); }
+
+    const shared=[]; const ssXml=await read("xl/sharedStrings.xml");
+    if(ssXml){ const doc=new DOMParser().parseFromString(ssXml,"application/xml");
+      for(const si of doc.getElementsByTagName("si")){ let t="";
+        for(const tn of si.getElementsByTagName("t")) t+=tn.textContent; shared.push(t); } }
+    // pick first worksheet file present
+    let sheetName=Object.keys(files).find(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+    const shXml=await read(sheetName); if(!shXml) throw new Error("no-sheet");
+    const doc=new DOMParser().parseFromString(shXml,"application/xml");
+    const colOf=r=>{ const m=/^([A-Z]+)/.exec(r); let c=0; for(const ch of m[1]) c=c*26+(ch.charCodeAt(0)-64); return c-1; };
+    const grid=[];
+    for(const row of doc.getElementsByTagName("row")){ const arr=[];
+      for(const c of row.getElementsByTagName("c")){ const ref=c.getAttribute("r")||""; const ci=ref?colOf(ref):arr.length;
+        const t=c.getAttribute("t"); const vEl=c.getElementsByTagName("v")[0]; const isEl=c.getElementsByTagName("t")[0];
+        let val=""; if(t==="s"&&vEl) val=shared[+vEl.textContent]||""; else if(t==="inlineStr"&&isEl) val=isEl.textContent;
+        else if(vEl) val=vEl.textContent; arr[ci]=val; }
+      grid.push(arr); }
+    const nonEmpty=grid.filter(r=>r&&r.some(x=>x!=null&&String(x).trim()!==""));
+    if(!nonEmpty.length) return {headers:[],rows:[]};
+    const headers=(nonEmpty[0]||[]).map(h=>String(h==null?"":h).trim());
+    const rows=nonEmpty.slice(1).map(r=>{const o={}; headers.forEach((h,j)=>o[h]=r[j]==null?"":r[j]); return o;});
+    return {headers,rows};
+  }
+
+  async function loadFile(file){
+    $("#loadmsg").textContent="Reading "+file.name+" ...";
+    try{
+      const ext=(file.name.split(".").pop()||"").toLowerCase();
+      if(ext==="xlsx"||ext==="xls"){ DATA=await readXlsx(await file.arrayBuffer()); }
+      else { DATA=parseDelimited(await file.text()); }
+      if(!DATA.headers.length) throw new Error("No columns found.");
+      $("#loadmsg").textContent="Loaded "+DATA.rows.length+" rows × "+DATA.headers.length+" columns from "+file.name;
+      buildMapper();
+    }catch(e){
+      const m = e.message==="no-inflate" ? "This browser can't unzip Excel files. Please save your sheet as CSV and try again."
+              : e.message==="bad-zip"||e.message==="no-sheet" ? "Couldn't read that Excel file. Try re-saving it, or export to CSV."
+              : "Could not read file: "+e.message;
+      $("#loadmsg").innerHTML="<span class='err'>"+esc(m)+"</span>";
+    }
+  }
+
+  function sampleVals(header){
+    if(!header) return "";
+    const vals=[]; for(const r of DATA.rows){ const v=r[header]; if(v!=null&&String(v).trim()!==""){ vals.push(String(v).trim()); if(vals.length>=6) break; } }
+    return vals.join(", ");
+  }
+  function colSelect(id, selected, includeNone){
+    let o = includeNone ? "<option value=''>(not present)</option>" : "";
+    for(const h of DATA.headers) o+="<option "+(h===selected?"selected":"")+" value='"+esc(h)+"'>"+esc(h)+"</option>";
+    return "<select id='"+id+"'>"+o+"</select>";
+  }
+  function buildMapper(){
+    const guess=suggestMap(DATA.headers);
+    let html="";
+    VARIABLE_SPEC.forEach((v,k)=>{
+      const sel=guess[v.name];
+      html+="<div class='maprow "+(sel?"guessed":"")+"' data-var='"+v.name+"'>"+
+        "<div class='vlabel'>"+esc(v.name)+(v.required?"<span class='req'>required</span>":"")+
+          "<br><small>"+esc(v.label)+"</small></div>"+
+        "<div>"+colSelect("sel_"+v.name, sel, true)+"</div>"+
+        "<div class='sample' id='samp_"+v.name+"'>"+esc(sampleVals(sel))+"</div></div>";
+    });
+    $("#maprows").innerHTML=html;
+    $("#idcol").innerHTML="<option value=''>(row number)</option>"+DATA.headers.map(h=>"<option value='"+esc(h)+"'>"+esc(h)+"</option>").join("");
+    VARIABLE_SPEC.forEach(v=>{ const s=$("#sel_"+v.name);
+      s.addEventListener("change",()=>{ $("#samp_"+v.name).textContent=sampleVals(s.value);
+        s.closest(".maprow").classList.remove("guessed"); }); });
+    $("#drop").classList.add("hidden"); $("#mapper").classList.remove("hidden");
+    $("#results").innerHTML="";
+  }
+
+  // ---- render results (report) ---------------------------------------------
+  function svgHist(score, good){
+    const w=640,h=300,ml=44,mr=12,mt=16,mb=40,pw=w-ml-mr,ph=h-mt-mb;
+    const S=score.filter(x=>x!=null&&!Number.isNaN(x)); if(!S.length) return "";
+    let lo=Math.min(...S), hi=Math.max(...S); if(lo===hi){lo-=1;hi+=1;}
+    const nb=24, bw=(hi-lo)/nb; const cg=new Array(nb).fill(0),cb=new Array(nb).fill(0),ct=new Array(nb).fill(0);
+    const haveOut=good.some(g=>g!=null);
+    score.forEach((s,i)=>{ if(s==null||Number.isNaN(s)) return; let bi=Math.min(nb-1,Math.floor((s-lo)/bw)); ct[bi]++;
+      if(haveOut&&good[i]!=null){ good[i]?cg[bi]++:cb[bi]++; } });
+    const ymax=Math.max(...ct,1); const X=v=>ml+(v-lo)/(hi-lo)*pw; const bwid=pw/nb*0.92;
+    let bars=""; for(let i=0;i<nb;i++){ const x=ml+i*pw/nb+pw/nb*0.04;
+      if(haveOut){ const hb=cb[i]/ymax*ph, hg=cg[i]/ymax*ph;
+        bars+="<rect x='"+x.toFixed(1)+"' y='"+(mt+ph-hb).toFixed(1)+"' width='"+bwid.toFixed(1)+"' height='"+hb.toFixed(1)+"' fill='#d64545'/>"+
+              "<rect x='"+x.toFixed(1)+"' y='"+(mt+ph-hb-hg).toFixed(1)+"' width='"+bwid.toFixed(1)+"' height='"+hg.toFixed(1)+"' fill='#2e8b57'/>";
+      } else { const ht=ct[i]/ymax*ph; bars+="<rect x='"+x.toFixed(1)+"' y='"+(mt+ph-ht).toFixed(1)+"' width='"+bwid.toFixed(1)+"' height='"+ht.toFixed(1)+"' fill='#4a72b0'/>"; } }
+    const thr=RISK_SCORE.threshold_pts; let tl="";
+    if(thr>=lo&&thr<=hi) tl="<line x1='"+X(thr).toFixed(1)+"' y1='"+mt+"' x2='"+X(thr).toFixed(1)+"' y2='"+(mt+ph)+"' stroke='#111' stroke-dasharray='4 3'/>"+
+      "<text x='"+X(thr).toFixed(1)+"' y='"+(mt-4)+"' text-anchor='middle'>threshold "+thr+"</text>";
+    let labs=""; const step=(hi-lo)/6; for(let t=lo;t<=hi+1e-9;t+=step) labs+="<text x='"+X(t).toFixed(1)+"' y='"+(mt+ph+16)+"' text-anchor='middle' fill='#555'>"+Math.round(t)+"</text>";
+    const leg=haveOut?("<rect x='"+(ml+pw-150)+"' y='"+mt+"' width='10' height='10' fill='#2e8b57'/><text x='"+(ml+pw-135)+"' y='"+(mt+9)+"'>Good (mRS ≤2)</text>"+
+      "<rect x='"+(ml+pw-150)+"' y='"+(mt+15)+"' width='10' height='10' fill='#d64545'/><text x='"+(ml+pw-135)+"' y='"+(mt+24)+"'>Poor (mRS &gt;2)</text>"):"";
+    return "<svg viewBox='0 0 "+w+" "+h+"' width='100%'>"+
+      "<line x1='"+ml+"' y1='"+(mt+ph)+"' x2='"+(ml+pw)+"' y2='"+(mt+ph)+"' stroke='#888'/><line x1='"+ml+"' y1='"+mt+"' x2='"+ml+"' y2='"+(mt+ph)+"' stroke='#888'/>"+
+      bars+tl+labs+leg+"<text x='"+(ml+pw/2)+"' y='"+(h-6)+"' text-anchor='middle' fill='#333'>Risk score</text>"+
+      "<text x='"+(ml-24)+"' y='"+(mt+8)+"' text-anchor='middle' fill='#555'>"+ymax+"</text><text x='"+(ml-24)+"' y='"+(mt+ph)+"' text-anchor='middle' fill='#555'>0</text></svg>";
+  }
+  function svgRoc(score, poor){
+    const w=300,h=300,m=40,pw=w-2*m,ph=h-2*m;
+    const pairs=[]; for(let i=0;i<score.length;i++) if(score[i]!=null&&!Number.isNaN(score[i])&&poor[i]!=null) pairs.push([score[i],poor[i]]);
+    const np=pairs.filter(p=>p[1]).length,nn=pairs.length-np; if(!np||!nn) return "<p class='muted'>No outcome to plot ROC.</p>";
+    const thr=[...new Set(pairs.map(p=>p[0]))].sort((a,b)=>b-a);
+    let tp=[0],fp=[0]; for(const t of thr){ let a=0,b=0; for(const p of pairs){ if(p[0]>=t){ p[1]?a++:b++; } } tp.push(a/np); fp.push(b/nn); }
+    tp.push(1);fp.push(1); const X=v=>m+v*pw,Y=v=>m+ph-v*ph;
+    const pts=fp.map((f,i)=>X(f).toFixed(1)+","+Y(tp[i]).toFixed(1)).join(" ");
+    const a=auc(score,poor);
+    return "<svg viewBox='0 0 "+w+" "+h+"' width='100%'>"+
+      "<rect x='"+m+"' y='"+m+"' width='"+pw+"' height='"+ph+"' fill='none' stroke='#ccc'/>"+
+      "<line x1='"+m+"' y1='"+(m+ph)+"' x2='"+(m+pw)+"' y2='"+m+"' stroke='#ddd' stroke-dasharray='3 3'/>"+
+      "<polyline points='"+pts+"' fill='none' stroke='#4a72b0' stroke-width='2'/>"+
+      "<text x='"+(m+pw/2)+"' y='"+(m+ph-10)+"' text-anchor='middle'>AUC = "+(a==null?"NA":a.toFixed(3))+"</text>"+
+      "<text x='"+(m+pw/2)+"' y='"+(h-8)+"' text-anchor='middle' fill='#555'>1 - Specificity</text></svg>";
+  }
+  function table(rows, cols){ if(!rows.length) return "<p class='ok'>None.</p>";
+    let h="<div class='scroll'><table><thead><tr>"+cols.map(c=>"<th>"+esc(c)+"</th>").join("")+"</tr></thead><tbody>";
+    for(const r of rows) h+="<tr>"+cols.map(c=>"<td>"+esc(r[c]==null?"":r[c])+"</td>").join("")+"</tr>";
+    return h+"</tbody></table></div>"; }
+  function download(name, rows, cols){
+    const csv=[cols.join(",")].concat(rows.map(r=>cols.map(c=>{const v=r[c]==null?"":String(r[c]); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(","))).join("\n");
+    const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url);
+  }
+
+  let LAST=null;
+  function renderResults(R){
+    LAST=R;
+    const excByCheck=c=>R.exceptions.filter(e=>e.check===c);
+    const nExc=R.exceptions.length; const nLogic=R.ruleSummary.reduce((a,r)=>a+(r.n_violations||0),0);
+    const present=R.varSummary.filter(v=>v.present).length;
+    const ev=R.score.eval; const haveEval=ev.auc!=null;
+
+    let scoreHtml="";
+    if(ev.missing_inputs.length){
+      scoreHtml="<h2>Arithmetic risk score</h2><div class='banner bad'>Cannot compute the score — missing input variable(s): "+
+        esc(ev.missing_inputs.join(", "))+".<br>The score needs: "+esc(Object.keys(RISK_SCORE.points).join(", "))+".</div>";
+    } else {
+      const hist=svgHist(R.score.scoreArr,R.score.good);
+      let perf;
+      if(haveEval){ const cm=ev.confusion;
+        perf="<div class='cards'>"+
+          "<div class='card'><div class='num'>"+ev.auc.toFixed(3)+"</div><div class='lbl'>external AUC (study ref "+RISK_SCORE.ref_auc.toFixed(3)+")</div></div>"+
+          "<div class='card'><div class='num'>"+Math.round(ev.sensitivity*100)+"%</div><div class='lbl'>sensitivity for poor outcome</div></div>"+
+          "<div class='card'><div class='num'>"+Math.round(ev.specificity*100)+"%</div><div class='lbl'>specificity</div></div></div>"+
+          "<div style='display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start'>"+
+          "<div style='flex:2;min-width:320px'>"+hist+"</div>"+
+          "<div style='flex:1;min-width:250px'>"+svgRoc(R.score.scoreArr,R.score.good.map(g=>g==null?null:!g))+
+          "<table style='margin-top:8px'><thead><tr><th></th><th>obs poor</th><th>obs good</th></tr></thead><tbody>"+
+          "<tr><td>pred poor</td><td>"+cm.tp+"</td><td>"+cm.fp+"</td></tr>"+
+          "<tr><td>pred good</td><td>"+cm.fn+"</td><td>"+cm.tn+"</td></tr></tbody></table></div></div>";
+      } else {
+        perf="<p class='note'>No usable outcome column ("+esc(RISK_SCORE.outcome_var)+") — score computed but not evaluated.</p>"+hist;
+      }
+      scoreHtml="<h2>Arithmetic risk score</h2><p class='muted'>Score = "+esc(RISK_SCORE.equation)+
+        " &nbsp;|&nbsp; predicted poor if score ≥ "+RISK_SCORE.threshold_pts+
+        " &nbsp;|&nbsp; "+ev.scorable+" scored, "+ev.excluded_missing+" excluded for missing inputs (complete-case).</p>"+perf;
+    }
+
+    const titles={missing:"Missing values (not permitted)",type:"Type / coercion errors",range:"Out-of-range values",allowed:"Disallowed category / code",logic:"Arithmetic / cross-field logic violations"};
+    let sections=""; for(const ck of ["missing","type","range","allowed","logic"]){ const sub=excByCheck(ck);
+      if(!sub.length) continue; sections+="<h2>"+titles[ck]+" <span class='badge'>"+sub.length+"</span></h2>"+
+        table(sub.map(e=>({row_id:e.row_id,row_num:e.row_num,variable:e.variable,value:e.value,expected:e.expected})),["row_id","row_num","variable","value","expected"]); }
+    if(!sections) sections="<p class='ok big'>No exceptions found. ✓</p>";
+
+    const banner=R.missingRequired.length?"<div class='banner bad'>Missing REQUIRED variables: "+esc(R.missingRequired.join(", "))+"</div>":"";
+    const vsRows=R.varSummary.map(v=>{ const cls=!v.present?(/(required)/.test(v.status)?"bad":"mut"):(v.status==="ok"?"ok":"bad");
+      return "<tr class='"+cls+"'>"+["variable","mapped_to","present","n","n_missing","pct_missing","n_type_err","n_range_err","status"].map(k=>"<td>"+esc(v[k]==null?"":v[k])+"</td>").join("")+"</tr>"; }).join("");
+    const vsHtml="<div class='scroll'><table><thead><tr>"+["variable","mapped_to","present","n","n_missing","pct_missing","n_type_err","n_range_err","status"].map(c=>"<th>"+c+"</th>").join("")+"</tr></thead><tbody>"+vsRows+"</tbody></table></div>";
+    const rlRows=R.ruleSummary.map(r=>{ const cls=/skipped/.test(r.status)?"mut":(r.status==="pass"?"ok":"bad");
+      return "<tr class='"+cls+"'><td>"+esc(r.rule)+"</td><td>"+esc(r.description)+"</td><td>"+esc(r.status)+"</td><td>"+esc(r.n_violations==null?"":r.n_violations)+"</td></tr>"; }).join("");
+    const rlHtml="<div class='scroll'><table><thead><tr><th>rule</th><th>description</th><th>status</th><th>violations</th></tr></thead><tbody>"+rlRows+"</tbody></table></div>";
+
+    $("#results").innerHTML=
+      "<h2 style='border:none;margin-top:26px'>Results</h2>"+banner+
+      "<div class='cards'>"+
+       "<div class='card'><div class='num'>"+present+"/"+R.varSummary.length+"</div><div class='lbl'>variables present</div></div>"+
+       "<div class='card'><div class='num'>"+nExc+"</div><div class='lbl'>total exceptions</div></div>"+
+       "<div class='card'><div class='num'>"+nLogic+"</div><div class='lbl'>logic violations</div></div>"+
+       (haveEval?("<div class='card'><div class='num'>"+ev.auc.toFixed(3)+"</div><div class='lbl'>risk-score AUC</div></div>"):"")+
+      "</div>"+
+      "<div class='toolbar'><button class='sec' id='dlExc'>Download exceptions.csv</button>"+
+       "<button class='sec' id='dlScore'>Download scored_data.csv</button></div>"+
+      scoreHtml+
+      "<h2>Variable summary</h2>"+vsHtml+
+      "<h2>Arithmetic / logic rules</h2>"+rlHtml+
+      sections;
+    $("#dlExc").onclick=()=>download("exceptions.csv",R.exceptions,["row_id","row_num","check","variable","value","expected"]);
+    $("#dlScore").onclick=()=>download("scored_data.csv",R.score.scored,["row_id","risk_score","prob_good_mrs2","predicted","observed"]);
+    $("#results").scrollIntoView({behavior:"smooth"});
+  }
+
+  // ---- wire up -------------------------------------------------------------
+  const drop=$("#drop");
+  drop.onclick=()=>$("#file").click();
+  $("#file").onchange=e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); };
+  ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
+  drop.addEventListener("drop",e=>{ if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+  $("#reset").onclick=()=>{ DATA=null; $("#mapper").classList.add("hidden"); $("#drop").classList.remove("hidden");
+    $("#results").innerHTML=""; $("#loadmsg").textContent=""; $("#file").value=""; };
+  $("#run").onclick=()=>{ const map={}; VARIABLE_SPEC.forEach(v=>{ const s=$("#sel_"+v.name).value; map[v.name]=s||null; });
+    const idcol=$("#idcol").value||null; renderResults(runValidation(DATA.rows,map,idcol)); };
+})();
+</script>
+</body>
+</html>

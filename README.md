@@ -19,7 +19,27 @@ Predicted POOR outcome if Score ≥ 86.
 
 ---
 
-## Easiest path: clone → drop file → run (no coding)
+## Easiest of all: the browser app (no R, no install)
+
+Open **`validator.html`** in any modern browser (double-click it, or drag it
+into a browser window). Then:
+
+1. **Drop your file** (CSV or Excel) onto the page — everything runs locally in
+   your browser; **no data is uploaded anywhere**.
+2. It **auto-matches your columns** to the study variables (fuzzy matching) and
+   shows **sample values** next to each dropdown so you can confirm or correct
+   the pick — no typing headers, no config file.
+3. Click **Validate & Score**. You get the same report inline — score AUC, ROC,
+   score-distribution chart, per-variable pass/fail, and every exception row —
+   with buttons to download `exceptions.csv` and `scored_data.csv`.
+
+Excel files are read in-browser (no plugins). If your browser is old and can't,
+just save your sheet as CSV. The app's checks and score are **identical** to the
+R version below (verified cell-for-cell on the same data).
+
+---
+
+## Scripted path: clone → drop file → run (no coding)
 
 ```bash
 git clone <REPO_URL>
