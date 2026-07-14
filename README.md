@@ -19,23 +19,44 @@ Predicted POOR outcome if Score ≥ 86.
 
 ---
 
-## Easiest of all: the browser app (no R, no install)
+## Recommended for PHI: run it locally (HIPAA-safe)
 
-Open **`validator.html`** in any modern browser (double-click it, or drag it
-into a browser window). Then:
+Because the app processes patient data, run it **entirely on your own machine** —
+no data ever leaves it, nothing is uploaded, and the local server is bound to
+`127.0.0.1` (localhost) so it is not reachable from your network.
 
-1. **Drop your file** (CSV or Excel) onto the page — everything runs locally in
-   your browser; **no data is uploaded anywhere**.
+```bash
+git clone https://github.com/Jonah-Keller/stroke-score-validator
+cd stroke-score-validator
+./start.sh          # macOS/Linux  (or double-click start.command / start.bat on Windows)
+```
+
+That one command auto-starts a local web server (using Python's built-in server,
+or R's `httpuv` which it auto-installs if Python is absent) and opens the app at
+`http://localhost:8765/validator.html`. Then:
+
+1. **Drop your file** (CSV or Excel) onto the page.
 2. It **auto-matches your columns** to the study variables (fuzzy matching) and
-   shows **sample values** next to each dropdown so you can confirm or correct
-   the pick — no typing headers, no config file.
-3. Click **Validate & Score**. You get the same report inline — score AUC, ROC,
-   score-distribution chart, per-variable pass/fail, and every exception row —
-   with buttons to download `exceptions.csv` and `scored_data.csv`.
+   shows **sample values** next to each dropdown so you confirm/correct the pick
+   — no typing headers, no config file.
+3. Click **Validate & Score** → the report appears inline (score AUC, ROC,
+   score-distribution chart, per-variable pass/fail, every exception row), with
+   buttons to download `exceptions.csv` and `scored_data.csv`.
 
-Excel files are read in-browser (no plugins). If your browser is old and can't,
-just save your sheet as CSV. The app's checks and score are **identical** to the
-R version below (verified cell-for-cell on the same data).
+**Why it's safe:** `validator.html` makes **zero network requests** — no CDNs,
+no fetch, no uploads. All parsing, checking, and scoring happen in your browser's
+memory. The local server only hands your browser the static HTML file; it never
+sees your data. (You can even skip the server entirely and just double-click
+`validator.html` — it works fully offline via `file://`.)
+
+Excel is read in-browser with no plugins; on a very old browser, save as CSV.
+The app's checks and score are **identical** to the R version below (verified
+cell-for-cell on the same data).
+
+> A public demo is hosted at
+> <https://jonah-keller.github.io/stroke-score-validator/> — it is also
+> client-side only, but **use the local `./start.sh` for real PHI** so the file
+> is served from your own machine and your compliance story is airtight.
 
 ---
 
