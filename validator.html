@@ -85,27 +85,16 @@ function V(name,label,type,o){ o=o||{}; return {name,label,type,
   required:!!o.required, allow_na:o.allow_na!==false,
   max_missing_frac:o.max_missing_frac==null?1:o.max_missing_frac}; }
 
+// Only the variables the bedside score needs: 5 inputs + outcome, plus
+// mortality_hospital and mrs_6month which feed outcome-cleaning + consistency checks.
 const VARIABLE_SPEC = [
   V("age","Age (years)","integer",{min:18,max:120,required:true}),
-  V("sex","Sex","categorical",{allowed:["Male","Female"]}),
-  V("bmi","BMI (kg/m^2)","continuous",{min:10,max:80}),
-  V("hx_htn","History: hypertension","binary"),
-  V("hx_dm2","History: diabetes (T2)","binary"),
-  V("hx_stroke","History: prior stroke","binary"),
-  V("hx_cancer","History: cancer","binary"),
-  V("hx_blood_thinners","Pre-stroke blood thinners","binary"),
-  V("hx_smoking","Smoking status","ordinal",{allowed:[0,1,2]}),
-  V("mrs_pre_stroke","Pre-stroke mRS","ordinal",{allowed:[0,1,2,3,4,5]}),
   V("nihss","NIHSS at presentation","integer",{min:0,max:42,required:true}),
-  V("time_since_lkn_min","Time since last-known-normal (min)","continuous",{min:0,max:20160}),
   V("tici","TICI (recoded 0-5)","ordinal",{allowed:[0,1,2,3,4,5],required:true}),
-  V("number_of_passes","Number of passes","integer",{min:0,max:10}),
-  V("thrombus_location","Thrombus location code","ordinal",{allowed:[0,1,2,3,4,5,6,7,8,9,10,11,12]}),
-  V("complication_ic_perforation","Complication: IC perforation","binary"),
-  V("complication_ic_dissection","Complication: IC dissection","binary"),
-  V("complication_access_site","Complication: access site","binary"),
+  V("number_of_passes","Number of passes","integer",{min:0,max:10,required:true}),
+  V("hx_cancer","History: cancer","binary",{required:true}),
+  V("mrs_90day","mRS at 90 days","ordinal",{allowed:[0,1,2,3,4,5,6],required:true,max_missing_frac:0.30}),
   V("mortality_hospital","In-hospital mortality","binary"),
-  V("mrs_90day","mRS at 90 days","ordinal",{allowed:[0,1,2,3,4,5,6],max_missing_frac:0.30}),
   V("mrs_6month","mRS at 6 months","ordinal",{allowed:[0,1,2,3,4,5,6],max_missing_frac:0.40})
 ];
 

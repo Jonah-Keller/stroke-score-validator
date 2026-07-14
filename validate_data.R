@@ -30,36 +30,22 @@
        max_missing_frac = max_missing_frac)
 }
 
+# Only the variables the bedside score actually needs. The score uses 5 inputs;
+# the outcome is used to evaluate it; mortality_hospital and mrs_6month feed the
+# outcome-cleaning and cross-field consistency checks. (Other cohort variables
+# are intentionally NOT validated here — this tool validates the SCORE.)
 VARIABLE_SPEC <- list(
-  # Demographics  (study inclusion criterion: adults >= 18 years)
+  # ---- score inputs (5) ----
   .var("age", "Age (years)", "integer", min = 18, max = 120, required = TRUE),
-  .var("sex", "Sex", "categorical", allowed = c("Male", "Female")),
-  .var("bmi", "BMI (kg/m^2)", "continuous", min = 10, max = 80),
-  # Medical history (0 = no, 1 = yes)
-  .var("hx_htn", "History: hypertension", "binary"),
-  .var("hx_dm2", "History: diabetes (T2)", "binary"),
-  .var("hx_stroke", "History: prior stroke", "binary"),
-  .var("hx_cancer", "History: cancer", "binary"),
-  .var("hx_blood_thinners", "Pre-stroke blood thinners", "binary"),
-  .var("hx_smoking", "Smoking status", "ordinal", allowed = 0:2),
-  .var("mrs_pre_stroke", "Pre-stroke mRS", "ordinal", allowed = 0:5),
-  # Presentation
-  .var("nihss", "NIHSS at presentation", "integer", min = 0, max = 42,
-       required = TRUE),
-  .var("time_since_lkn_min", "Time since last-known-normal (min)",
-       "continuous", min = 0, max = 20160),
-  # Procedural
+  .var("nihss", "NIHSS at presentation", "integer", min = 0, max = 42, required = TRUE),
   .var("tici", "TICI (recoded 0-5)", "ordinal", allowed = 0:5, required = TRUE),
-  .var("number_of_passes", "Number of passes", "integer", min = 0, max = 10),
-  .var("thrombus_location", "Thrombus location code", "ordinal", allowed = 0:12),
-  # Complications (0/1)
-  .var("complication_ic_perforation", "Complication: IC perforation", "binary"),
-  .var("complication_ic_dissection", "Complication: IC dissection", "binary"),
-  .var("complication_access_site", "Complication: access site", "binary"),
-  # Outcomes
-  .var("mortality_hospital", "In-hospital mortality", "binary"),
+  .var("number_of_passes", "Number of passes", "integer", min = 0, max = 10, required = TRUE),
+  .var("hx_cancer", "History: cancer", "binary", required = TRUE),
+  # ---- outcome (1) ----
   .var("mrs_90day", "mRS at 90 days", "ordinal", allowed = 0:6,
-       max_missing_frac = 0.30),
+       required = TRUE, max_missing_frac = 0.30),
+  # ---- supporting: outcome cleaning + consistency checks (2) ----
+  .var("mortality_hospital", "In-hospital mortality", "binary"),
   .var("mrs_6month", "mRS at 6 months", "ordinal", allowed = 0:6,
        max_missing_frac = 0.40)
 )

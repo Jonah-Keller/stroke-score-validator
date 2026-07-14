@@ -17,6 +17,12 @@ P(mRS ≤ 2) = 1 / (1 + exp(−(1.5553 − Score/20)))
 Predicted POOR outcome if Score ≥ 86.
 ```
 
+**Scope:** this tool validates only the **8 variables the score needs** — the 5
+inputs above, the `mrs_90day` outcome, and `mortality_hospital` + `mrs_6month`
+(used to clean the outcome for in-hospital deaths and to run the cross-timepoint
+consistency check). It is deliberately not a general data-quality check on your
+whole cohort.
+
 ---
 
 ## Recommended for PHI: run it locally (HIPAA-safe)
