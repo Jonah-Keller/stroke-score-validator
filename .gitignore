@@ -1,0 +1,8 @@
+# collaborators' data and results must never be committed
+data/*
+!data/README.txt
+validation_output/
+column_map.csv
+.DS_Store
+*.Rproj
+.Rhistory
