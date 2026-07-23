@@ -85,14 +85,19 @@ function V(name,label,type,o){ o=o||{}; return {name,label,type,
   required:!!o.required, allow_na:o.allow_na!==false,
   max_missing_frac:o.max_missing_frac==null?1:o.max_missing_frac}; }
 
-// Only the variables the bedside score needs: 5 inputs + outcome, plus
-// mortality_hospital and mrs_6month which feed outcome-cleaning + consistency checks.
+// Variables for BOTH bedside scores. Peri inputs: age,nihss,tici,passes,hx_cancer.
+// Pre-op inputs: nihss,hx_cancer,hx_dm2,pre_stroke_ambulatory_status,mrs_pre_stroke,hx_smoking.
+// mrs_90day = shared outcome; mortality_hospital & mrs_6month feed cleaning + checks.
 const VARIABLE_SPEC = [
-  V("age","Age (years)","integer",{min:18,max:120,required:true}),
   V("nihss","NIHSS at presentation","integer",{min:0,max:42,required:true}),
-  V("tici","TICI (recoded 0-5)","ordinal",{allowed:[0,1,2,3,4,5],required:true}),
-  V("number_of_passes","Number of passes","integer",{min:0,max:10,required:true}),
   V("hx_cancer","History: cancer","binary",{required:true}),
+  V("age","Age (years)","integer",{min:18,max:120}),
+  V("tici","TICI (mTICI or 0-5)","ordinal",{allowed:[0,1,2,3,4,5]}),
+  V("number_of_passes","Number of passes","integer",{min:0,max:10}),
+  V("hx_dm2","History: diabetes (T2)","binary"),
+  V("pre_stroke_ambulatory_status","Pre-stroke ambulatory (0=indep,1=non)","binary"),
+  V("mrs_pre_stroke","Pre-stroke mRS","ordinal",{allowed:[0,1,2,3,4,5]}),
+  V("hx_smoking","Smoking status","ordinal",{allowed:[0,1,2]}),
   V("mrs_90day","mRS at 90 days","ordinal",{allowed:[0,1,2,3,4,5,6],required:true,max_missing_frac:0.30}),
   V("mortality_hospital","In-hospital mortality","binary"),
   V("mrs_6month","mRS at 6 months","ordinal",{allowed:[0,1,2,3,4,5,6],max_missing_frac:0.40})
@@ -115,13 +120,26 @@ const LOGIC_RULES = [
    needs:["nihss"], fn:(r)=> r.nihss!=null && (r.nihss%1!==0)}
 ];
 
-const RISK_SCORE = {
-  points:{nihss:2, age:1, hx_cancer:22, number_of_passes:2, tici:-7},
-  intercept:1.5552664, scale_factor:20, threshold_pts:86,
-  equation:"(2 × nihss) + (1 × age) + (22 × hx_cancer) + (2 × number_of_passes) + (-7 × tici)",
-  outcome_var:"mrs_90day", good_cutoff:2, ref_auc:0.837
-};
-const scoreProb = s => 1/(1+Math.exp(-(RISK_SCORE.intercept - s/RISK_SCORE.scale_factor)));
+const SCALE_FACTOR=20, OUTCOME_VAR="mrs_90day", GOOD_CUTOFF=2;
+const RISK_SCORES = [
+  { key:"peri", label:"Peri-procedural (post) score",
+    points:{nihss:2, age:1, hx_cancer:22, number_of_passes:2, tici:-7},
+    intercept:1.5552664, threshold_pts:86, ref_auc:0.837,
+    equation:"(2 × nihss) + (1 × age) + (22 × hx_cancer) + (2 × passes) + (-7 × tici)" },
+  { key:"preop", label:"Pre-operative score",
+    points:{nihss:2, hx_cancer:22, hx_dm2:7, pre_stroke_ambulatory_status:7, mrs_pre_stroke:6, hx_smoking:2},
+    intercept:2.9251469, threshold_pts:42, ref_auc:0.854,
+    equation:"(2 × nihss) + (22 × hx_cancer) + (7 × hx_dm2) + (7 × ambulatory) + (6 × pre_stroke_mrs) + (2 × smoking)" }
+];
+const scoreProb = (s, sc) => 1/(1+Math.exp(-(sc.intercept - s/SCALE_FACTOR)));
+// mTICI (0,1,2a,2b,2c,3) -> 0-5; numeric 0-5 pass through
+function recodeTici(x){
+  if (x==null) return null;
+  const k=String(x).trim().toLowerCase();
+  const m={"0":0,"1":1,"2a":2,"2b":3,"2c":4,"3":5};
+  if (k in m) return m[k];
+  const v=Number(k); return Number.isNaN(v)?x:v;
+}
 
 // numeric parse: "" / null -> null (missing); non-numeric -> NaN (coercion error)
 function pnum(x){
@@ -140,6 +158,7 @@ const SYN = {
   bmi:["bmi","bodymassindex"],
   hx_htn:["hxhtn","hypertension","htn","hxhypertension"],
   hx_dm2:["hxdm2","diabetes","dm","dm2","hxdiabetes","diabetesmellitus","t2dm"],
+  pre_stroke_ambulatory_status:["ambulatorystatus","ambulatory","prestrokeambulatory","ambulation","mobility"],
   hx_stroke:["hxstroke","priorstroke","historystroke","previousstroke"],
   hx_cancer:["hxcancer","cancer","malignancy","cancerhistory","cancerhx"],
   hx_blood_thinners:["bloodthinners","anticoagulation","anticoagulant","antiplatelet","hxbloodthinners","doac"],
@@ -204,6 +223,9 @@ function auc(scores, pos){
 function runValidation(rows, map, idCol){
   const n = rows.length;
   const rowIds = rows.map((r,i)=> (idCol && r[idCol]!=null && String(r[idCol])!=="") ? String(r[idCol]) : String(i+1));
+  // normalize mTICI -> 0-5 in place so checks and scoring agree
+  const ticiSrc = map.tici;
+  if (ticiSrc) for(let i=0;i<n;i++) rows[i][ticiSrc]=recodeTici(rows[i][ticiSrc]);
   const exceptions = [];
   const add=(i,check,variable,value,expected)=>exceptions.push({row_id:rowIds[i],row_num:i+1,check,variable,value:(value==null?"":String(value)),expected});
   const varSummary=[]; const presentMap={}; const missingRequired=[];
@@ -255,41 +277,45 @@ function runValidation(rows, map, idCol){
     ruleSummary.push({rule:rl.name,description:rl.desc,status:nv?"VIOLATIONS":"pass",n_violations:nv});
   }
 
-  // ---- arithmetic risk score ----
-  const needed=Object.keys(RISK_SCORE.points);
-  const missingInputs=needed.filter(v=>!(v in presentMap));
-  const score=new Array(n).fill(null); const good=new Array(n).fill(null);
-  let scorable=0;
-  if (!missingInputs.length){
-    for(let i=0;i<n;i++){ let ok=true,s=0;
-      for(const v of needed){ const x=cf[i][v]; if(x==null||Number.isNaN(x)){ok=false;break;} s+=RISK_SCORE.points[v]*x; }
-      if(ok){ score[i]=s; scorable++; } }
-  }
-  // outcome (good = mrs<=cutoff), with death->mrs6 cleaning
-  const ov=RISK_SCORE.outcome_var;
-  if (ov in presentMap){ for(let i=0;i<n;i++){ let mrs=cf[i][ov];
-      if((mrs==null||Number.isNaN(mrs)) && cf[i].mortality_hospital===1) mrs=6;
-      good[i] = (mrs==null||Number.isNaN(mrs)) ? null : (mrs<=RISK_SCORE.good_cutoff); } }
-
-  const thr=RISK_SCORE.threshold_pts;
-  const scored = rows.map((_,i)=>({row_id:rowIds[i],
-    risk_score: score[i]==null?"":Math.round(score[i]*10)/10,
-    prob_good_mrs2: score[i]==null?"":Math.round(scoreProb(score[i])*1000)/1000,
-    predicted: score[i]==null?"":(score[i]>=thr?"poor (>=thr)":"good (<thr)"),
-    observed: good[i]==null?"":(good[i]?"good":"poor")}));
-
-  const ev={scorable, excluded_missing:n-scorable, missing_inputs:missingInputs};
+  // ---- shared outcome (good = mrs<=cutoff), with death->mrs6 cleaning ----
+  const good=new Array(n).fill(null);
+  if (OUTCOME_VAR in presentMap){ for(let i=0;i<n;i++){ let mrs=cf[i][OUTCOME_VAR];
+    if((mrs==null||Number.isNaN(mrs)) && cf[i].mortality_hospital===1) mrs=6;
+    good[i] = (mrs==null||Number.isNaN(mrs)) ? null : (mrs<=GOOD_CUTOFF); } }
   const poor = good.map(g=>g==null?null:!g);
-  let tp=0,fp=0,fn=0,tn=0,nEval=0;
-  for(let i=0;i<n;i++){ if(score[i]==null||good[i]==null) continue; nEval++;
-    const pp=score[i]>=thr; if(pp&&!good[i])tp++; else if(pp&&good[i])fp++; else if(!pp&&!good[i])fn++; else tn++; }
-  ev.n_eval=nEval;
-  if (nEval>0 && (tp+fn)>0 && (tn+fp)>0){
-    ev.auc=auc(score,poor); ev.sensitivity=tp/(tp+fn); ev.specificity=tn/(tn+fp);
-    ev.confusion={tp,fp,fn,tn};
+
+  // ---- each score independently ----
+  const scores={};
+  for (const sc of RISK_SCORES){
+    const needed=Object.keys(sc.points);
+    const missingInputs=needed.filter(v=>!(v in presentMap));
+    const score=new Array(n).fill(null); let scorable=0;
+    if (!missingInputs.length){
+      for(let i=0;i<n;i++){ let ok=true,s=0;
+        for(const v of needed){ const x=cf[i][v]; if(x==null||Number.isNaN(x)){ok=false;break;} s+=sc.points[v]*x; }
+        if(ok){ score[i]=s; scorable++; } }
+    }
+    const thr=sc.threshold_pts;
+    const ev={scorable, excluded_missing:n-scorable, missing_inputs:missingInputs};
+    let tp=0,fp=0,fn=0,tn=0,nEval=0;
+    for(let i=0;i<n;i++){ if(score[i]==null||good[i]==null) continue; nEval++;
+      const pp=score[i]>=thr; if(pp&&!good[i])tp++; else if(pp&&good[i])fp++; else if(!pp&&!good[i])fn++; else tn++; }
+    ev.n_eval=nEval;
+    if (nEval>0 && (tp+fn)>0 && (tn+fp)>0){
+      ev.auc=auc(score,poor); ev.sensitivity=tp/(tp+fn); ev.specificity=tn/(tn+fp); ev.confusion={tp,fp,fn,tn};
+    }
+    scores[sc.key]={spec:sc, scoreArr:score, eval:ev};
   }
+
+  // combined per-row table (both scores)
+  const scored = rows.map((_,i)=>{ const o={row_id:rowIds[i]};
+    for(const k in scores){ const s=scores[k].scoreArr[i], thr=scores[k].spec.threshold_pts;
+      o[k+"_score"]= s==null?"":Math.round(s*10)/10;
+      o[k+"_pred"] = s==null?"":(s>=thr?"poor":"good"); }
+    o.observed = good[i]==null?"":(good[i]?"good":"poor"); return o; });
+
   return {exceptions,varSummary,ruleSummary,missingRequired,
-          score:{scored,eval:ev,scoreArr:score,good}, n, rowIds};
+          score:{scores,scored,good}, n, rowIds};
 }
 
 // ---- CSV / TSV parser (pure) ------------------------------------------------
@@ -314,7 +340,7 @@ function parseDelimited(text){
 }
 /* ===ENGINE END=== */
 if (typeof module!=="undefined" && module.exports)
-  module.exports = {VARIABLE_SPEC,RISK_SCORE,LOGIC_RULES,runValidation,suggestMap,parseDelimited,auc,pnum,scoreProb};
+  module.exports = {VARIABLE_SPEC,RISK_SCORES,LOGIC_RULES,runValidation,suggestMap,parseDelimited,auc,pnum,scoreProb,recodeTici};
 
 /* =========================================================================
    UI  (browser only)
@@ -427,7 +453,7 @@ if (typeof document!=="undefined") (function(){
   }
 
   // ---- render results (report) ---------------------------------------------
-  function svgHist(score, good){
+  function svgHist(score, good, thr){
     const w=640,h=300,ml=44,mr=12,mt=16,mb=40,pw=w-ml-mr,ph=h-mt-mb;
     const S=score.filter(x=>x!=null&&!Number.isNaN(x)); if(!S.length) return "";
     let lo=Math.min(...S), hi=Math.max(...S); if(lo===hi){lo-=1;hi+=1;}
@@ -441,7 +467,7 @@ if (typeof document!=="undefined") (function(){
         bars+="<rect x='"+x.toFixed(1)+"' y='"+(mt+ph-hb).toFixed(1)+"' width='"+bwid.toFixed(1)+"' height='"+hb.toFixed(1)+"' fill='#d64545'/>"+
               "<rect x='"+x.toFixed(1)+"' y='"+(mt+ph-hb-hg).toFixed(1)+"' width='"+bwid.toFixed(1)+"' height='"+hg.toFixed(1)+"' fill='#2e8b57'/>";
       } else { const ht=ct[i]/ymax*ph; bars+="<rect x='"+x.toFixed(1)+"' y='"+(mt+ph-ht).toFixed(1)+"' width='"+bwid.toFixed(1)+"' height='"+ht.toFixed(1)+"' fill='#4a72b0'/>"; } }
-    const thr=RISK_SCORE.threshold_pts; let tl="";
+    let tl="";
     if(thr>=lo&&thr<=hi) tl="<line x1='"+X(thr).toFixed(1)+"' y1='"+mt+"' x2='"+X(thr).toFixed(1)+"' y2='"+(mt+ph)+"' stroke='#111' stroke-dasharray='4 3'/>"+
       "<text x='"+X(thr).toFixed(1)+"' y='"+(mt-4)+"' text-anchor='middle'>threshold "+thr+"</text>";
     let labs=""; const step=(hi-lo)/6; for(let t=lo;t<=hi+1e-9;t+=step) labs+="<text x='"+X(t).toFixed(1)+"' y='"+(mt+ph+16)+"' text-anchor='middle' fill='#555'>"+Math.round(t)+"</text>";
@@ -483,32 +509,36 @@ if (typeof document!=="undefined") (function(){
     const excByCheck=c=>R.exceptions.filter(e=>e.check===c);
     const nExc=R.exceptions.length; const nLogic=R.ruleSummary.reduce((a,r)=>a+(r.n_violations||0),0);
     const present=R.varSummary.filter(v=>v.present).length;
-    const ev=R.score.eval; const haveEval=ev.auc!=null;
 
-    let scoreHtml="";
-    if(ev.missing_inputs.length){
-      scoreHtml="<h2>Arithmetic risk score</h2><div class='banner bad'>Cannot compute the score — missing input variable(s): "+
-        esc(ev.missing_inputs.join(", "))+".<br>The score needs: "+esc(Object.keys(RISK_SCORE.points).join(", "))+".</div>";
-    } else {
-      const hist=svgHist(R.score.scoreArr,R.score.good);
+    let scoreHtml="", scoreCards="";
+    for(const k in R.score.scores){
+      const sr=R.score.scores[k], sc=sr.spec, ev=sr.eval, haveEval=ev.auc!=null;
+      if(ev.missing_inputs.length){
+        scoreHtml+="<h2>"+esc(sc.label)+"</h2><div class='banner bad'>Cannot compute — missing input(s): "+
+          esc(ev.missing_inputs.join(", "))+".<br>Needs: "+esc(Object.keys(sc.points).join(", "))+".</div>";
+        continue;
+      }
+      const hist=svgHist(sr.scoreArr,R.score.good,sc.threshold_pts);
       let perf;
       if(haveEval){ const cm=ev.confusion;
         perf="<div class='cards'>"+
-          "<div class='card'><div class='num'>"+ev.auc.toFixed(3)+"</div><div class='lbl'>external AUC (study ref "+RISK_SCORE.ref_auc.toFixed(3)+")</div></div>"+
-          "<div class='card'><div class='num'>"+Math.round(ev.sensitivity*100)+"%</div><div class='lbl'>sensitivity for poor outcome</div></div>"+
+          "<div class='card'><div class='num'>"+ev.auc.toFixed(3)+"</div><div class='lbl'>external AUC (study ref "+sc.ref_auc.toFixed(3)+")</div></div>"+
+          "<div class='card'><div class='num'>"+Math.round(ev.sensitivity*100)+"%</div><div class='lbl'>sensitivity (poor)</div></div>"+
           "<div class='card'><div class='num'>"+Math.round(ev.specificity*100)+"%</div><div class='lbl'>specificity</div></div></div>"+
           "<div style='display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start'>"+
           "<div style='flex:2;min-width:320px'>"+hist+"</div>"+
-          "<div style='flex:1;min-width:250px'>"+svgRoc(R.score.scoreArr,R.score.good.map(g=>g==null?null:!g))+
+          "<div style='flex:1;min-width:250px'>"+svgRoc(sr.scoreArr,R.score.good.map(g=>g==null?null:!g))+
           "<table style='margin-top:8px'><thead><tr><th></th><th>obs poor</th><th>obs good</th></tr></thead><tbody>"+
           "<tr><td>pred poor</td><td>"+cm.tp+"</td><td>"+cm.fp+"</td></tr>"+
           "<tr><td>pred good</td><td>"+cm.fn+"</td><td>"+cm.tn+"</td></tr></tbody></table></div></div>";
+        scoreCards+="<div class='card'><div class='num'>"+ev.auc.toFixed(3)+"</div><div class='lbl'>"+esc(sc.key)+" AUC</div></div>";
       } else {
-        perf="<p class='note'>No usable outcome column ("+esc(RISK_SCORE.outcome_var)+") — score computed but not evaluated.</p>"+hist;
+        perf="<p class='note'>No usable outcome ("+esc(OUTCOME_VAR)+") — computed but not evaluated.</p>"+hist;
+        scoreCards+="<div class='card'><div class='num'>"+ev.scorable+"</div><div class='lbl'>"+esc(sc.key)+" scored</div></div>";
       }
-      scoreHtml="<h2>Arithmetic risk score</h2><p class='muted'>Score = "+esc(RISK_SCORE.equation)+
-        " &nbsp;|&nbsp; predicted poor if score ≥ "+RISK_SCORE.threshold_pts+
-        " &nbsp;|&nbsp; "+ev.scorable+" scored, "+ev.excluded_missing+" excluded for missing inputs (complete-case).</p>"+perf;
+      scoreHtml+="<h2>"+esc(sc.label)+"</h2><p class='muted'>Score = "+esc(sc.equation)+
+        " &nbsp;|&nbsp; poor if score ≥ "+sc.threshold_pts+
+        " &nbsp;|&nbsp; "+ev.scorable+" scored, "+ev.excluded_missing+" excluded for missing inputs.</p>"+perf;
     }
 
     const titles={missing:"Missing values (not permitted)",type:"Type / coercion errors",range:"Out-of-range values",allowed:"Disallowed category / code",logic:"Arithmetic / cross-field logic violations"};
@@ -531,7 +561,7 @@ if (typeof document!=="undefined") (function(){
        "<div class='card'><div class='num'>"+present+"/"+R.varSummary.length+"</div><div class='lbl'>variables present</div></div>"+
        "<div class='card'><div class='num'>"+nExc+"</div><div class='lbl'>total exceptions</div></div>"+
        "<div class='card'><div class='num'>"+nLogic+"</div><div class='lbl'>logic violations</div></div>"+
-       (haveEval?("<div class='card'><div class='num'>"+ev.auc.toFixed(3)+"</div><div class='lbl'>risk-score AUC</div></div>"):"")+
+       scoreCards+
       "</div>"+
       "<div class='toolbar'><button class='sec' id='dlExc'>Download exceptions.csv</button>"+
        "<button class='sec' id='dlScore'>Download scored_data.csv</button></div>"+
@@ -540,7 +570,7 @@ if (typeof document!=="undefined") (function(){
       "<h2>Arithmetic / logic rules</h2>"+rlHtml+
       sections;
     $("#dlExc").onclick=()=>download("exceptions.csv",R.exceptions,["row_id","row_num","check","variable","value","expected"]);
-    $("#dlScore").onclick=()=>download("scored_data.csv",R.score.scored,["row_id","risk_score","prob_good_mrs2","predicted","observed"]);
+    $("#dlScore").onclick=()=>download("scored_data.csv",R.score.scored,["row_id","peri_score","peri_pred","preop_score","preop_pred","observed"]);
     $("#results").scrollIntoView({behavior:"smooth"});
   }
 

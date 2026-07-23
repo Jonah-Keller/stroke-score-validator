@@ -9,19 +9,26 @@ published bedside arithmetic risk score** on their own cohort. It:
    are present, **evaluates it** (AUC, sensitivity/specificity, ROC).
 3. **Writes one clean HTML report** (with charts) plus machine-readable CSVs.
 
-The score being validated:
+The **two** scores being validated (each from its own study model):
 
 ```
-Score = (2 × NIHSS) + (1 × age) + (22 × hx_cancer) + (2 × passes) + (−7 × TICI)
-P(mRS ≤ 2) = 1 / (1 + exp(−(1.5553 − Score/20)))
-Predicted POOR outcome if Score ≥ 86.
+PERI-PROCEDURAL (post):  2·NIHSS + 1·Age + 22·hx_cancer + 2·passes − 7·TICI
+                         POOR if Score ≥ 86   (intercept 1.5553)
+
+PRE-OPERATIVE:           2·NIHSS + 22·hx_cancer + 7·diabetes + 7·ambulatory
+                         + 6·pre_stroke_mRS + 2·smoking
+                         POOR if Score ≥ 42   (intercept 2.9251)
 ```
 
-**Scope:** this tool validates only the **8 variables the score needs** — the 5
-inputs above, the `mrs_90day` outcome, and `mortality_hospital` + `mrs_6month`
-(used to clean the outcome for in-hospital deaths and to run the cross-timepoint
-consistency check). It is deliberately not a general data-quality check on your
-whole cohort.
+Both use `mrs_90day` (good = mRS ≤ 2) as the outcome. The report computes and
+evaluates each score separately (AUC, sensitivity/specificity, ROC), and each
+patient's row shows both scores.
+
+**mTICI:** TICI may be entered as recorded (`0, 1, 2a, 2b, 2c, 3`) or as the
+study's 0–5 encoding — the tool recodes `2a→2, 2b→3, 2c→4, 3→5` automatically.
+
+**Scope:** the tool validates only the variables these two scores need — it is
+deliberately not a general data-quality check on your whole cohort.
 
 ---
 

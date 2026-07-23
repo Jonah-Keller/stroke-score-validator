@@ -30,21 +30,28 @@
        max_missing_frac = max_missing_frac)
 }
 
-# Only the variables the bedside score actually needs. The score uses 5 inputs;
-# the outcome is used to evaluate it; mortality_hospital and mrs_6month feed the
-# outcome-cleaning and cross-field consistency checks. (Other cohort variables
-# are intentionally NOT validated here — this tool validates the SCORE.)
+# Variables needed for the TWO bedside scores. Peri-procedural inputs: age,
+# nihss, tici, number_of_passes, hx_cancer. Pre-operative inputs: nihss,
+# hx_cancer, hx_dm2, pre_stroke_ambulatory_status, mrs_pre_stroke, hx_smoking.
+# mrs_90day is the shared outcome; mortality_hospital and mrs_6month feed
+# outcome-cleaning and consistency checks. (Other cohort variables are not
+# validated here — this tool validates the SCORES.)
 VARIABLE_SPEC <- list(
-  # ---- score inputs (5) ----
-  .var("age", "Age (years)", "integer", min = 18, max = 120, required = TRUE),
+  # ---- shared / peri inputs ----
   .var("nihss", "NIHSS at presentation", "integer", min = 0, max = 42, required = TRUE),
-  .var("tici", "TICI (recoded 0-5)", "ordinal", allowed = 0:5, required = TRUE),
-  .var("number_of_passes", "Number of passes", "integer", min = 0, max = 10, required = TRUE),
   .var("hx_cancer", "History: cancer", "binary", required = TRUE),
-  # ---- outcome (1) ----
+  .var("age", "Age (years)", "integer", min = 18, max = 120),
+  .var("tici", "TICI (mTICI or 0-5)", "ordinal", allowed = 0:5),
+  .var("number_of_passes", "Number of passes", "integer", min = 0, max = 10),
+  # ---- pre-operative inputs ----
+  .var("hx_dm2", "History: diabetes (T2)", "binary"),
+  .var("pre_stroke_ambulatory_status", "Pre-stroke ambulatory status (0=indep,1=non)", "binary"),
+  .var("mrs_pre_stroke", "Pre-stroke mRS", "ordinal", allowed = 0:5),
+  .var("hx_smoking", "Smoking status", "ordinal", allowed = 0:2),
+  # ---- outcome ----
   .var("mrs_90day", "mRS at 90 days", "ordinal", allowed = 0:6,
        required = TRUE, max_missing_frac = 0.30),
-  # ---- supporting: outcome cleaning + consistency checks (2) ----
+  # ---- supporting: outcome cleaning + consistency checks ----
   .var("mortality_hospital", "In-hospital mortality", "binary"),
   .var("mrs_6month", "mRS at 6 months", "ordinal", allowed = 0:6,
        max_missing_frac = 0.40)
@@ -86,26 +93,45 @@ LOGIC_RULES <- list(
         function(df) !is.na(df$nihss) & (df$nihss %% 1 != 0))
 )
 
-# ---- the published bedside arithmetic risk score ----------------------------
+# ---- the two published bedside arithmetic risk scores -----------------------
 # Score = sum(points_k * variable_k). Higher score = higher risk of POOR outcome.
-# Derived from the ordinal logistic model (coefficients x scale_factor, rounded).
-# P(good, i.e. mRS <= 2) = 1 / (1 + exp(-(intercept - score/scale_factor))).
-# Predicted POOR if score >= threshold_pts.
-RISK_SCORE <- list(
-  points = c(nihss = 2, age = 1, hx_cancer = 22, number_of_passes = 2, tici = -7),
-  intercept = 1.5552664,   # 2|3 threshold intercept from the ordinal model
-  scale_factor = 20,
-  threshold_pts = 86,
-  equation = "(2 x nihss) + (1 x age) + (22 x hx_cancer) + (2 x number_of_passes) + (-7 x tici)",
-  # Outcome used to evaluate the score, if present in the data:
-  outcome_var = "mrs_90day",           # good outcome = mrs_90day <= good_cutoff
-  good_cutoff = 2,
-  # Reference performance from the study's internal holdout (for context only):
-  ref_auc = 0.837
+# Each score is derived from its own ordinal logistic model (coefficients x
+# scale_factor, rounded). P(good, mRS<=2) = 1/(1+exp(-(intercept - score/scale))).
+# Predicted POOR if score >= threshold_pts. Values are pulled verbatim from the
+# stored study models (results/models + manuscript/pre_op/results/models).
+SCALE_FACTOR <- 20
+OUTCOME_VAR  <- "mrs_90day"   # good outcome = mrs_90day <= GOOD_CUTOFF
+GOOD_CUTOFF  <- 2
+
+RISK_SCORES <- list(
+  peri = list(
+    key = "peri", label = "Peri-procedural (post) score",
+    points = c(nihss = 2, age = 1, hx_cancer = 22, number_of_passes = 2, tici = -7),
+    intercept = 1.5552664, threshold_pts = 86, ref_auc = 0.837,
+    equation = "(2 x nihss) + (1 x age) + (22 x hx_cancer) + (2 x passes) + (-7 x tici)"
+  ),
+  preop = list(
+    key = "preop", label = "Pre-operative score",
+    points = c(nihss = 2, hx_cancer = 22, hx_dm2 = 7,
+               pre_stroke_ambulatory_status = 7, mrs_pre_stroke = 6, hx_smoking = 2),
+    intercept = 2.9251469, threshold_pts = 42, ref_auc = 0.854,
+    equation = "(2 x nihss) + (22 x hx_cancer) + (7 x hx_dm2) + (7 x ambulatory) + (6 x pre_stroke_mrs) + (2 x smoking)"
+  )
 )
 
-.score_prob <- function(score) {   # P(good outcome | score)
-  1 / (1 + exp(-(RISK_SCORE$intercept - score / RISK_SCORE$scale_factor)))
+.score_prob <- function(score, sc) {   # P(good outcome | score) for score-spec sc
+  1 / (1 + exp(-(sc$intercept - score / SCALE_FACTOR)))
+}
+
+# mTICI as recorded (0,1,2a,2b,2c,3) -> the study's 0-5 encoding. Already-numeric
+# 0-5 values pass through unchanged.
+.recode_tici <- function(x) {
+  m <- c("0" = 0, "1" = 1, "2a" = 2, "2b" = 3, "2c" = 4, "3" = 5)
+  out <- suppressWarnings(as.numeric(as.character(x)))
+  key <- trimws(tolower(as.character(x)))
+  hit <- key %in% names(m)
+  out[hit] <- m[key[hit]]
+  out
 }
 
 
@@ -212,7 +238,7 @@ check_requirements <- function(install = TRUE) {
 .svg_open <- function(w, h) sprintf(
   "<svg viewBox='0 0 %d %d' width='100%%' style='max-width:%dpx;height:auto;font-family:sans-serif;font-size:11px'>", w, h, w)
 
-.svg_hist <- function(score, good) {   # good: logical (or NA if no outcome)
+.svg_hist <- function(score, good, thr) {   # good: logical (or NA if no outcome)
   w <- 640; h <- 300; ml <- 44; mr <- 12; mt <- 16; mb <- 40
   pw <- w - ml - mr; ph <- h - mt - mb
   rng <- range(score, na.rm = TRUE); if (diff(rng) == 0) rng <- rng + c(-1, 1)
@@ -244,7 +270,6 @@ check_requirements <- function(install = TRUE) {
         x, mt + ph - ht, bwid, ht))
     }
   }
-  thr <- RISK_SCORE$threshold_pts
   thr_line <- if (thr >= rng[1] && thr <= rng[2]) sprintf(
     "<line x1='%.1f' y1='%d' x2='%.1f' y2='%d' stroke='#111' stroke-dasharray='4 3'/><text x='%.1f' y='%d' text-anchor='middle'>threshold %d</text>",
     x_of(thr), mt, x_of(thr), mt + ph, x_of(thr), mt - 4, thr) else ""
@@ -298,59 +323,59 @@ check_requirements <- function(install = TRUE) {
 
 # ---- compute the arithmetic score + evaluate it -----------------------------
 .score_and_eval <- function(canon_df, row_ids) {
-  needed <- names(RISK_SCORE$points)
-  have <- needed[needed %in% names(canon_df)]
-  missing_inputs <- setdiff(needed, have)
-
-  # complete-case over the score inputs (matches the study's complete-case rule)
   n <- nrow(canon_df)
-  complete <- rep(TRUE, n)
-  for (v in have) complete <- complete & !is.na(canon_df[[v]])
-  if (length(missing_inputs)) complete <- rep(FALSE, n)  # cannot score at all
 
-  score <- rep(NA_real_, n)
-  if (!length(missing_inputs)) {
-    s <- rep(0, n)
-    for (v in needed) s <- s + RISK_SCORE$points[[v]] * canon_df[[v]]
-    score[complete] <- s[complete]
-  }
-  prob_good <- .score_prob(score)
-  pred_poor <- score >= RISK_SCORE$threshold_pts
-
-  # outcome (good = mRS <= cutoff), with the study's death->mRS 6 cleaning
-  ov <- RISK_SCORE$outcome_var
+  # shared outcome (good = mRS <= cutoff), with the study's death->mRS 6 cleaning
   good <- rep(NA, n)
-  if (ov %in% names(canon_df)) {
-    mrs <- canon_df[[ov]]
+  if (OUTCOME_VAR %in% names(canon_df)) {
+    mrs <- canon_df[[OUTCOME_VAR]]
     if ("mortality_hospital" %in% names(canon_df))
       mrs[is.na(mrs) & canon_df$mortality_hospital == 1] <- 6
-    good <- mrs <= RISK_SCORE$good_cutoff
+    good <- mrs <= GOOD_CUTOFF
   }
   poor <- !good
 
-  # per-row scored table
-  scored <- data.frame(
-    row_id = row_ids, risk_score = round(score, 1),
-    prob_good_mrs2 = round(prob_good, 3),
-    predicted = ifelse(is.na(pred_poor), NA,
-                       ifelse(pred_poor, "poor (>=thr)", "good (<thr)")),
-    observed = ifelse(is.na(good), NA, ifelse(good, "good", "poor")),
-    stringsAsFactors = FALSE)
-
-  # evaluation (only where both score and outcome present)
-  ev <- list(scorable = sum(complete),
-             excluded_missing = sum(!complete),
-             missing_inputs = missing_inputs)
-  eval_keep <- !is.na(score) & !is.na(good)
-  ev$n_eval <- sum(eval_keep)
-  if (ev$n_eval > 0 && any(poor[eval_keep]) && any(good[eval_keep])) {
-    ev$auc <- .auc(score[eval_keep], poor[eval_keep])
-    tp <- sum(pred_poor & poor, na.rm = TRUE); fn <- sum(!pred_poor & poor, na.rm = TRUE)
-    tn <- sum(!pred_poor & good, na.rm = TRUE); fp <- sum(pred_poor & good, na.rm = TRUE)
-    ev$sensitivity <- tp / (tp + fn); ev$specificity <- tn / (tn + fp)
-    ev$confusion <- c(tp = tp, fp = fp, fn = fn, tn = tn)
+  # compute + evaluate each score independently
+  scores <- list()
+  for (sc in RISK_SCORES) {
+    needed <- names(sc$points)
+    missing_inputs <- setdiff(needed, names(canon_df))
+    complete <- rep(!length(missing_inputs), n)
+    score <- rep(NA_real_, n)
+    if (!length(missing_inputs)) {
+      for (v in needed) complete <- complete & !is.na(canon_df[[v]])
+      s <- rep(0, n)
+      for (v in needed) s <- s + sc$points[[v]] * canon_df[[v]]
+      score[complete] <- s[complete]
+    }
+    pred_poor <- score >= sc$threshold_pts
+    ev <- list(scorable = sum(!is.na(score)),
+               excluded_missing = sum(is.na(score)),
+               missing_inputs = missing_inputs)
+    keep <- !is.na(score) & !is.na(good)
+    ev$n_eval <- sum(keep)
+    if (ev$n_eval > 0 && any(poor[keep]) && any(good[keep])) {
+      ev$auc <- .auc(score[keep], poor[keep])
+      tp <- sum(pred_poor & poor, na.rm = TRUE); fn <- sum(!pred_poor & poor, na.rm = TRUE)
+      tn <- sum(!pred_poor & good, na.rm = TRUE); fp <- sum(pred_poor & good, na.rm = TRUE)
+      ev$sensitivity <- tp / (tp + fn); ev$specificity <- tn / (tn + fp)
+      ev$confusion <- c(tp = tp, fp = fp, fn = fn, tn = tn)
+    }
+    scores[[sc$key]] <- list(spec = sc, score = score, prob = .score_prob(score, sc),
+                             pred_poor = pred_poor, eval = ev)
   }
-  list(scored = scored, eval = ev, score = score, good = good)
+
+  # combined per-row scored table (both scores side by side)
+  scored <- data.frame(row_id = row_ids, stringsAsFactors = FALSE)
+  for (k in names(scores)) {
+    sr <- scores[[k]]
+    scored[[paste0(k, "_score")]] <- round(sr$score, 1)
+    scored[[paste0(k, "_pred")]]  <- ifelse(is.na(sr$pred_poor), NA,
+                                     ifelse(sr$pred_poor, "poor", "good"))
+  }
+  scored$observed <- ifelse(is.na(good), NA, ifelse(good, "good", "poor"))
+
+  list(scores = scores, scored = scored, good = good)
 }
 
 
@@ -394,6 +419,10 @@ validate_data <- function(file = NULL, ..., map = NULL, sheet = 1, id_col = NULL
   resolve <- function(canon) if (canon %in% names(map)) unname(map[[canon]]) else canon
   row_ids <- if (!is.null(id_col) && id_col %in% names(raw))
     as.character(raw[[id_col]]) else as.character(seq_len(nrow(raw)))
+
+  # normalize mTICI (0,1,2a,2b,2c,3) -> 0-5 in place, so checks and scoring agree
+  tici_src <- resolve("tici")
+  if (tici_src %in% names(raw)) raw[[tici_src]] <- .recode_tici(raw[[tici_src]])
 
   exceptions <- list()
   add_exc <- function(i, check, variable, value, expected) {
@@ -547,18 +576,21 @@ validate_data <- function(file = NULL, ..., map = NULL, sheet = 1, id_col = NULL
                              collapse = "  "), "\n")
   }
   if (!is.null(score_res)) {
-    ev <- score_res$eval
-    if (length(ev$missing_inputs))
-      cat("Risk score: CANNOT compute - missing input variable(s):",
-          paste(ev$missing_inputs, collapse = ", "), "\n")
-    else {
-      cat(sprintf("Risk score: %d scored, %d excluded for missing inputs\n",
-                  ev$scorable, ev$excluded_missing))
-      if (!is.null(ev$auc))
-        cat(sprintf("  AUC = %.3f  (sens %.0f%%, spec %.0f%% at threshold %d)  [study ref AUC %.3f]\n",
-                    ev$auc, 100 * ev$sensitivity, 100 * ev$specificity,
-                    RISK_SCORE$threshold_pts, RISK_SCORE$ref_auc))
-      else cat("  (no usable outcome column -> score computed but not evaluated)\n")
+    for (sr in score_res$scores) {
+      ev <- sr$eval; sc <- sr$spec
+      cat(sprintf("%s:\n", sc$label))
+      if (length(ev$missing_inputs))
+        cat("  CANNOT compute - missing input(s):",
+            paste(ev$missing_inputs, collapse = ", "), "\n")
+      else {
+        cat(sprintf("  %d scored, %d excluded for missing inputs\n",
+                    ev$scorable, ev$excluded_missing))
+        if (!is.null(ev$auc))
+          cat(sprintf("  AUC = %.3f  (sens %.0f%%, spec %.0f%% at threshold %d)  [study ref %.3f]\n",
+                      ev$auc, 100 * ev$sensitivity, 100 * ev$specificity,
+                      sc$threshold_pts, sc$ref_auc))
+        else cat("  (no usable outcome -> computed but not evaluated)\n")
+      }
     }
   }
   cat("Report:", normalizePath(p_html), "\n")
@@ -679,54 +711,50 @@ validate_template <- function() {
     paste0("<div class='banner bad'>Missing REQUIRED variables: ",
            .esc(paste(missing_required, collapse = ", ")), "</div>") else ""
 
-  # ---- risk-score section ----------------------------------------------------
+  # ---- risk-score sections (one per score) ----------------------------------
   score_html <- ""; score_card <- ""
   if (!is.null(score_res)) {
-    ev <- score_res$eval
-    if (length(ev$missing_inputs)) {
-      score_html <- paste0(
-        "<h2>Arithmetic risk score</h2><div class='banner bad'>",
-        "Cannot compute the score - missing required input variable(s): ",
-        .esc(paste(ev$missing_inputs, collapse = ", ")),
-        ".<br>The score needs: ", .esc(paste(names(RISK_SCORE$points), collapse = ", ")),
-        ".</div>")
-    } else {
-      hist_svg <- .svg_hist(score_res$score, score_res$good)
+    for (sr in score_res$scores) {
+      ev <- sr$eval; sc <- sr$spec
+      if (length(ev$missing_inputs)) {
+        score_html <- paste0(score_html, "<h2>", .esc(sc$label), "</h2>",
+          "<div class='banner bad'>Cannot compute - missing input(s): ",
+          .esc(paste(ev$missing_inputs, collapse = ", ")),
+          ".<br>Needs: ", .esc(paste(names(sc$points), collapse = ", ")), ".</div>")
+        next
+      }
+      hist_svg <- .svg_hist(sr$score, score_res$good, sc$threshold_pts)
       have_eval <- !is.null(ev$auc)
       perf <- if (have_eval) {
         cm <- ev$confusion
         paste0(
           "<div class='cards'>",
           "<div class='card'><div class='num'>", sprintf("%.3f", ev$auc),
-          "</div><div class='lbl'>external AUC (study ref ", sprintf("%.3f", RISK_SCORE$ref_auc),
-          ")</div></div>",
+          "</div><div class='lbl'>external AUC (study ref ", sprintf("%.3f", sc$ref_auc), ")</div></div>",
           "<div class='card'><div class='num'>", sprintf("%.0f%%", 100 * ev$sensitivity),
-          "</div><div class='lbl'>sensitivity for poor outcome</div></div>",
+          "</div><div class='lbl'>sensitivity (poor)</div></div>",
           "<div class='card'><div class='num'>", sprintf("%.0f%%", 100 * ev$specificity),
           "</div><div class='lbl'>specificity</div></div></div>",
           "<div style='display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start'>",
           "<div style='flex:2;min-width:320px'>", hist_svg, "</div>",
-          "<div style='flex:1;min-width:260px'>", .svg_roc(score_res$score, !score_res$good),
+          "<div style='flex:1;min-width:260px'>", .svg_roc(sr$score, !score_res$good),
           "<table style='margin-top:8px'><thead><tr><th></th><th>obs poor</th><th>obs good</th></tr></thead>",
           "<tbody><tr><td>pred poor</td><td>", cm["tp"], "</td><td>", cm["fp"], "</td></tr>",
           "<tr><td>pred good</td><td>", cm["fn"], "</td><td>", cm["tn"], "</td></tr></tbody></table>",
           "</div></div>")
       } else {
-        paste0("<p class='note'>No usable outcome column (", .esc(RISK_SCORE$outcome_var),
-               ") found - the score was computed but not evaluated. Distribution shown below.</p>",
-               hist_svg)
+        paste0("<p class='note'>No usable outcome (", .esc(OUTCOME_VAR),
+               ") - computed but not evaluated. Distribution below.</p>", hist_svg)
       }
-      score_html <- paste0(
-        "<h2>Arithmetic risk score</h2>",
-        "<p class='muted'>Score = ", .esc(RISK_SCORE$equation),
-        " &nbsp;|&nbsp; predicted poor if score &#8805; ", RISK_SCORE$threshold_pts,
-        " &nbsp;|&nbsp; ", ev$scorable, " patients scored, ", ev$excluded_missing,
-        " excluded for missing inputs (complete-case).</p>", perf)
-      score_card <- paste0(
+      score_html <- paste0(score_html, "<h2>", .esc(sc$label), "</h2>",
+        "<p class='muted'>Score = ", .esc(sc$equation),
+        " &nbsp;|&nbsp; poor if score &#8805; ", sc$threshold_pts,
+        " &nbsp;|&nbsp; ", ev$scorable, " scored, ", ev$excluded_missing,
+        " excluded for missing inputs.</p>", perf)
+      score_card <- paste0(score_card,
         "<div class='card'><div class='num'>",
         if (have_eval) sprintf("%.3f", ev$auc) else ev$scorable,
-        "</div><div class='lbl'>", if (have_eval) "risk-score AUC" else "patients scored",
-        "</div></div>")
+        "</div><div class='lbl'>", .esc(sc$key), if (have_eval) " AUC" else " scored", "</div></div>")
     }
   }
 
