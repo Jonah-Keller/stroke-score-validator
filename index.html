@@ -1,48 +1,32 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stroke Bedside Score — External Validator</title>
+<title>Stroke Pre-Thrombectomy Risk Score — External Validation</title>
 <style>
-:root{--blue:#1565c0;--green:#0a7d32}
 *{box-sizing:border-box}
-body{font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#1a1a1a;background:#f4f6f9;margin:0}
-.wrap{max-width:760px;margin:0 auto;padding:40px 22px 80px}
-h1{font-size:26px;margin:0 0 6px} .sub{color:#555;margin:0 0 26px}
-.card{background:#fff;border:1px solid #e2e6ec;border-radius:14px;padding:26px;margin:0 0 20px}
-.dl{display:inline-block;background:var(--green);color:#fff;font-size:18px;font-weight:700;
-    text-decoration:none;padding:15px 26px;border-radius:10px;margin:6px 0}
-.dl:hover{filter:brightness(1.05)}
-.steps{counter-reset:s;padding:0;margin:14px 0 0;list-style:none}
-.steps li{counter-increment:s;position:relative;padding:6px 0 6px 38px}
-.steps li::before{content:counter(s);position:absolute;left:0;top:6px;background:var(--blue);color:#fff;
-    width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
-.priv{background:#eafaf0;border:1px solid #bfe6cd;border-radius:10px;padding:14px 16px;font-size:14px;color:#14532d}
-.muted{color:#777;font-size:14px}
-code{background:#eef1f5;padding:2px 6px;border-radius:5px;font-size:13px}
-a{color:var(--blue)}
-.tag{display:inline-block;background:#eafaf0;color:var(--green);font-weight:700;font-size:12px;
-     padding:3px 10px;border-radius:20px;margin-bottom:10px}
-</style></head><body><div class="wrap">
-<h1>Stroke Bedside Score — External Validator</h1>
-<p class="sub">Validate the published pre-operative / peri-procedural mRS risk scores on your own cohort. Runs entirely on your computer.</p>
+body{font:16px/1.65 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#222;background:#fff;
+     max-width:620px;margin:0 auto;padding:64px 24px}
+h1{font-size:22px;font-weight:600;margin:0 0 8px;line-height:1.3}
+p{margin:0 0 18px;color:#333}
+.dl{display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;font-weight:600;
+    padding:12px 22px;border-radius:8px;margin:4px 0 22px}
+ol{margin:0 0 22px;padding-left:22px} li{margin:6px 0}
+.fine{color:#777;font-size:13.5px;border-top:1px solid #eee;padding-top:16px;margin-top:26px}
+a{color:#1a1a1a}
+</style></head><body>
 
-<div class="card">
-  <div class="tag">✓ RUNS 100% LOCALLY — NO DATA LEAVES YOUR MACHINE</div>
-  <h2 style="margin:.2em 0">Recommended: download &amp; run offline (for PHI)</h2>
-  <a class="dl" href="https://github.com/Jonah-Keller/stroke-score-validator/releases/latest/download/validator.html">⬇ Download the validator (one file)</a>
-  <ol class="steps">
-    <li><b>Download</b> the file above (a single <code>validator.html</code>, ~40&nbsp;KB).</li>
-    <li><b>Double-click it</b> to open in your browser — it runs from your disk, offline. (You can disconnect from the internet.)</li>
-    <li><b>Load your CSV/Excel</b> and map the columns; it scores and validates instantly.</li>
-    <li>Click <b>“⬇ Researcher export (de-identified)”</b> and send me the resulting <code>validation_export.json</code> — it contains <b>no PHI</b> (only score + outcome per patient, plus summary metrics).</li>
-  </ol>
-  <p class="priv"><b>Privacy:</b> your patient data is read and processed in your browser only — it is never uploaded anywhere. Safe to use fully offline / air-gapped. Want to verify? Open the file in a text editor and search for <code>fetch</code> — there are no network calls.</p>
-</div>
+<h1>Validate the pre-thrombectomy stroke risk score on your own data</h1>
+<p>A single-file tool that scores your cohort against the published pre-operative and peri-procedural risk models. It runs entirely on your own computer — your data is never uploaded or transferred.</p>
 
-<div class="card">
-  <h2 style="margin:.2em 0;font-size:18px">Just exploring? Preview in-browser</h2>
-  <p class="muted">You can open the tool in your browser to try it with <b>test / de-identified data only</b>. For real patient data, use the downloaded offline version above.</p>
-  <p><a href="validator.html">Open the validator in this browser →</a></p>
-</div>
+<a class="dl" href="https://github.com/Jonah-Keller/stroke-score-validator/releases/latest/download/validator.html">Download the validator</a>
 
-<p class="muted">Source &amp; documentation: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a></p>
-</div></body></html>
+<ol>
+  <li>Download the file above and double-click to open it (runs locally in your browser; works offline).</li>
+  <li>Load your spreadsheet and confirm the column matches.</li>
+  <li>Review the results, then click <b>Researcher export (de-identified)</b> to save a summary file.</li>
+  <li>That file contains no PHI — only scores and outcomes — and can be shared for pooled validation.</li>
+</ol>
+
+<p class="fine">Patient data is read and processed only in your browser; nothing leaves your machine.
+Source: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a></p>
+
+</body></html>
