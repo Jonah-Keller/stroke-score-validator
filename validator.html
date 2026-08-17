@@ -39,6 +39,7 @@
   button { font-size:14px; padding:9px 18px; border-radius:8px; border:1px solid var(--blue);
            background:var(--blue); color:#fff; cursor:pointer; }
   button.sec { background:#fff; color:var(--blue); }
+  button.pri { background:#0a7d32; color:#fff; }
   button:disabled { opacity:.5; cursor:default; }
   .toolbar { display:flex; gap:10px; margin:16px 0; flex-wrap:wrap; align-items:center; }
   .hidden { display:none; }
@@ -502,6 +503,30 @@ if (typeof document!=="undefined") (function(){
     const csv=[cols.join(",")].concat(rows.map(r=>cols.map(c=>{const v=r[c]==null?"":String(r[c]); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(","))).join("\n");
     const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url);
   }
+  // De-identified researcher export (BOTH scores). score+prediction+outcome per row,
+  // NO row_id / NO inputs, plus per-score summary metrics. Contains no PHI.
+  function exportResearcher(R, siteLabel){
+    const out={ tool:"stroke-score-validator", schema:"validation_export/v2",
+      exported_at:new Date().toISOString(),
+      site_label:String(siteLabel||"").replace(/[\r\n,]/g," ").slice(0,80),
+      scores:{}, rows:[] };
+    for(const k in R.score.scores){
+      const sr=R.score.scores[k], sc=sr.spec, ev=sr.eval||{}, cm=ev.confusion||{tp:0,fp:0,fn:0,tn:0};
+      const ppv=(cm.tp+cm.fp)?cm.tp/(cm.tp+cm.fp):null, npv=(cm.tn+cm.fn)?cm.tn/(cm.tn+cm.fn):null;
+      out.scores[k]={ label:sc.label, equation:sc.equation, threshold_pts:sc.threshold_pts,
+        ref_auc:sc.ref_auc, points:sc.points,
+        summary:{ n_scored:ev.scorable, n_eval:ev.n_eval,
+          auc:(ev.auc==null?null:ev.auc), sensitivity:(ev.sensitivity==null?null:ev.sensitivity),
+          specificity:(ev.specificity==null?null:ev.specificity), ppv:ppv, npv:npv, confusion:cm } };
+    }
+    out.rows=(R.score.scored||[]).map(r=>({
+      peri_score:r.peri_score, peri_pred:r.peri_pred,
+      preop_score:r.preop_score, preop_pred:r.preop_pred,
+      observed:(r.observed===""?null:r.observed) }));   // "poor"/"good"/null
+    const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download="validation_export.json"; a.click(); URL.revokeObjectURL(a.href);
+  }
 
   let LAST=null;
   function renderResults(R){
@@ -563,7 +588,10 @@ if (typeof document!=="undefined") (function(){
        "<div class='card'><div class='num'>"+nLogic+"</div><div class='lbl'>logic violations</div></div>"+
        scoreCards+
       "</div>"+
-      "<div class='toolbar'><button class='sec' id='dlExc'>Download exceptions.csv</button>"+
+      "<div class='toolbar'>"+
+       "<input id='siteLabel' placeholder='site label (optional, no PHI)' style='padding:6px 8px;border:1px solid #ccc;border-radius:6px'>"+
+       "<button class='pri' id='dlResearch'>⬇ Researcher export (de-identified)</button>"+
+       "<button class='sec' id='dlExc'>Download exceptions.csv</button>"+
        "<button class='sec' id='dlScore'>Download scored_data.csv</button></div>"+
       scoreHtml+
       "<h2>Variable summary</h2>"+vsHtml+
@@ -571,6 +599,7 @@ if (typeof document!=="undefined") (function(){
       sections;
     $("#dlExc").onclick=()=>download("exceptions.csv",R.exceptions,["row_id","row_num","check","variable","value","expected"]);
     $("#dlScore").onclick=()=>download("scored_data.csv",R.score.scored,["row_id","peri_score","peri_pred","preop_score","preop_pred","observed"]);
+    $("#dlResearch").onclick=()=>exportResearcher(R, $("#siteLabel")?$("#siteLabel").value:"");
     $("#results").scrollIntoView({behavior:"smooth"});
   }
 
