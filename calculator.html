@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pre-Thrombectomy Outcome Predictor</title>
+<style>
+*{box-sizing:border-box}
+body{font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#222;background:#f7f8fa;
+     max-width:640px;margin:0 auto;padding:40px 22px 70px}
+h1{font-size:22px;font-weight:600;margin:0 0 4px} .sub{color:#666;font-size:14px;margin:0 0 22px}
+.card{background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:20px 22px;margin:0 0 18px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid #f0f1f3}
+.row:last-child{border-bottom:none}
+.row label{font-size:15px}
+select,input[type=number]{padding:8px 10px;border:1px solid #c7ccd4;border-radius:8px;font-size:15px;min-width:150px}
+.result{text-align:center;padding:8px 0 4px}
+.big{font-size:52px;font-weight:800;line-height:1}
+.lbl{color:#555;font-size:14px;margin-top:2px}
+.band{display:inline-block;margin-top:12px;padding:6px 16px;border-radius:20px;font-weight:700;font-size:14px;color:#fff}
+.meta{color:#555;font-size:13.5px;margin-top:14px;text-align:center}
+.disc{color:#777;font-size:12.5px;border-top:1px solid #eee;padding-top:14px;margin-top:8px}
+</style></head><body>
+
+<h1>Pre-thrombectomy outcome predictor</h1>
+<p class="sub">Enter pre-operative variables to estimate the probability of a good functional outcome (mRS 0–2 at 90 days), from the published pre-operative risk model.</p>
+
+<div class="card" id="inputs">
+  <div class="row"><label>NIHSS at presentation</label><input type="number" id="nihss" min="0" max="42" value="12"></div>
+  <div class="row"><label>History of cancer</label><select id="cancer"><option value="0">No</option><option value="1">Yes</option></select></div>
+  <div class="row"><label>Diabetes (type 2)</label><select id="dm"><option value="0">No</option><option value="1">Yes</option></select></div>
+  <div class="row"><label>Pre-stroke ambulation</label><select id="ambul"><option value="0">Independent</option><option value="1">Non-independent</option></select></div>
+  <div class="row"><label>Pre-stroke mRS</label><select id="premrs"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
+  <div class="row"><label>Smoking</label><select id="smoke"><option value="0">Never</option><option value="1">Current</option><option value="2">Former</option></select></div>
+</div>
+
+<div class="card">
+  <div class="result">
+    <div class="big" id="pgood">—</div>
+    <div class="lbl">predicted probability of <b>good outcome</b> (mRS 0–2 at 90 days)</div>
+    <div class="band" id="band">—</div>
+  </div>
+  <div class="meta" id="meta"></div>
+  <div class="disc">Prognostic estimate only — it informs, but does not replace, clinical judgment, and is not a directive to perform or withhold thrombectomy. Probabilities are calibrated to the derivation cohort; the score's discrimination was AUC ≈ 0.76 (derivation) and ≈ 0.69 on external validation. Research tool; not for sole clinical decision-making.</div>
+</div>
+
+<script>
+// Pre-operative risk score (published integer points)
+var POINTS={nihss:2,cancer:22,dm:7,ambul:7,premrs:6,smoke:2}, THR=42;
+// Probability of good outcome (mRS<=2), logistic calibrated to derivation data:
+//   P(good) = 1 / (1 + exp(-(A + B*score))),  fit on n=421
+var A=1.5419, B=-0.05129;
+function val(id){var e=document.getElementById(id);var v=parseFloat(e.value);return isNaN(v)?0:v;}
+function compute(){
+  var nihss=Math.max(0,Math.min(42,val("nihss")));
+  var score=POINTS.nihss*nihss+POINTS.cancer*val("cancer")+POINTS.dm*val("dm")+
+            POINTS.ambul*val("ambul")+POINTS.premrs*val("premrs")+POINTS.smoke*val("smoke");
+  var p=1/(1+Math.exp(-(A+B*score)));           // P(good)
+  var pct=Math.round(p*100);
+  document.getElementById("pgood").textContent=pct+"%";
+  var band=document.getElementById("band");
+  var col,txt;
+  if(p>=0.60){col="#0a7d32";txt="Favorable predicted outcome";}
+  else if(p>=0.35){col="#b8860b";txt="Intermediate";}
+  else{col="#c62828";txt="Unfavorable predicted outcome";}
+  band.style.background=col; band.textContent=txt;
+  document.getElementById("meta").innerHTML=
+    "Risk score = <b>"+score+"</b> &nbsp;·&nbsp; predicted probability of poor outcome (mRS 3–6) = <b>"+(100-pct)+"%</b>"+
+    "<br>Published risk-score cut: ≥ "+THR+" flags higher risk (this patient: "+(score>=THR?"≥"+THR+", higher-risk band":"< "+THR+", lower-risk band")+").";
+}
+["nihss","cancer","dm","ambul","premrs","smoke"].forEach(function(id){
+  document.getElementById(id).addEventListener("input",compute);
+  document.getElementById(id).addEventListener("change",compute);});
+compute();
+</script>
+</body></html>
