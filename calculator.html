@@ -1,31 +1,46 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pre-Thrombectomy Outcome Predictor</title>
+<title>ASCEND Score — pre-thrombectomy outcome calculator</title>
+<meta name="description" content="ASCEND score: a six-variable bedside equation predicting 90-day functional independence before mechanical thrombectomy, externally validated in 981 patients.">
 <style>
 *{box-sizing:border-box}
 body{font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#222;background:#f7f8fa;
-     max-width:640px;margin:0 auto;padding:40px 22px 70px}
-h1{font-size:22px;font-weight:600;margin:0 0 4px} .sub{color:#666;font-size:14px;margin:0 0 22px}
+     max-width:680px;margin:0 auto;padding:36px 22px 70px}
+h1{font-size:26px;font-weight:700;margin:0 0 2px;letter-spacing:-.01em}
+h1 small{font-size:15px;font-weight:500;color:#666;display:block;margin-top:2px}
+h2{font-size:15px;font-weight:700;margin:0 0 10px;color:#333;text-transform:uppercase;letter-spacing:.04em}
+.sub{color:#555;font-size:14.5px;margin:12px 0 22px}
 .card{background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:20px 22px;margin:0 0 18px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid #f0f1f3}
 .row:last-child{border-bottom:none}
 .row label{font-size:15px}
-select,input[type=number]{padding:8px 10px;border:1px solid #c7ccd4;border-radius:8px;font-size:15px;min-width:150px}
-.result{text-align:center;padding:8px 0 4px}
-.big{font-size:52px;font-weight:800;line-height:1}
+.row label span{display:block;color:#888;font-size:12.5px;font-weight:400}
+select,input[type=number]{padding:8px 10px;border:1px solid #c7ccd4;border-radius:8px;font-size:15px;min-width:160px;background:#fff}
+.result{text-align:center;padding:6px 0 4px}
+.score{font-size:15px;color:#555}
+.score b{font-size:22px;color:#222}
+.big{font-size:56px;font-weight:800;line-height:1.05;margin-top:8px}
 .lbl{color:#555;font-size:14px;margin-top:2px}
 .band{display:inline-block;margin-top:12px;padding:6px 16px;border-radius:20px;font-weight:700;font-size:14px;color:#fff}
 .meta{color:#555;font-size:13.5px;margin-top:14px;text-align:center}
+.eq{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;background:#f3f4f6;border-radius:8px;padding:10px 12px;color:#333;overflow-x:auto;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #eef0f2}
+th{font-weight:600;color:#444;background:#fafbfc}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.hl td{background:#fff8e1;font-weight:600}
 .disc{color:#777;font-size:12.5px;border-top:1px solid #eee;padding-top:14px;margin-top:8px}
+.foot{color:#777;font-size:13px;margin-top:26px}
+a{color:#1a1a1a}
 </style></head><body>
 
-<h1>Pre-thrombectomy outcome predictor</h1>
-<p class="sub">Enter pre-operative variables to estimate the probability of a good functional outcome (mRS 0–2 at 90 days), from the published pre-operative risk model.</p>
+<h1>ASCEND Score <small>Pre-thrombectomy outcome calculator · 90-day functional independence (mRS 0–2)</small></h1>
+<p class="sub">Six variables available before the procedure, during the family consent conversation. No imaging, no computer required at the bedside — this page just does the arithmetic and looks up the probability for you.</p>
 
 <div class="card" id="inputs">
   <div class="row"><label>NIHSS at presentation</label><input type="number" id="nihss" min="0" max="42" value="12"></div>
-  <div class="row"><label>History of cancer</label><select id="cancer"><option value="0">No</option><option value="1">Yes</option></select></div>
-  <div class="row"><label>Diabetes (type 2)</label><select id="dm"><option value="0">No</option><option value="1">Yes</option></select></div>
+  <div class="row"><label>History of cancer <span>any prior diagnosis, incl. remission</span></label><select id="cancer"><option value="0">No</option><option value="1">Yes</option></select></div>
+  <div class="row"><label>Type 2 diabetes</label><select id="dm"><option value="0">No</option><option value="1">Yes</option></select></div>
   <div class="row"><label>Pre-stroke ambulation</label><select id="ambul"><option value="0">Independent</option><option value="1">Non-independent</option></select></div>
   <div class="row"><label>Pre-stroke mRS</label><select id="premrs"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
   <div class="row"><label>Smoking</label><select id="smoke"><option value="0">Never</option><option value="1">Current</option><option value="2">Former</option></select></div>
@@ -33,19 +48,59 @@ select,input[type=number]{padding:8px 10px;border:1px solid #c7ccd4;border-radiu
 
 <div class="card">
   <div class="result">
+    <div class="score">ASCEND score = <b id="score">—</b></div>
     <div class="big" id="pgood">—</div>
     <div class="lbl">predicted probability of <b>good outcome</b> (mRS 0–2 at 90 days)</div>
     <div class="band" id="band">—</div>
   </div>
   <div class="meta" id="meta"></div>
-  <div class="disc">Prognostic estimate only — it informs, but does not replace, clinical judgment, and is not a directive to perform or withhold thrombectomy. Probabilities are calibrated to the derivation cohort; the score's discrimination was AUC ≈ 0.76 (derivation) and ≈ 0.69 on external validation. Research tool; not for sole clinical decision-making.</div>
+  <div class="disc">Prognostic estimate only. It informs, but does not replace, clinical judgment, and is not a directive to perform or withhold thrombectomy. Probabilities are calibrated to the derivation cohort (36.6% functional independence); centers with a materially different baseline outcome rate should interpret absolute probabilities accordingly.</div>
 </div>
 
+<div class="card">
+  <h2>The equation</h2>
+  <div class="eq">ASCEND = 2×NIHSS + 22×Cancer + 7×Diabetes + 7×Non-ambulatory + 6×Pre-stroke mRS + 2×Smoking</div>
+  <p style="font-size:13.5px;color:#555;margin:10px 0 0">Score ≥ 42 flags higher risk of a poor outcome (mRS 3–6). Smoking: current = 1, former = 2 (2 points per level).</p>
+</div>
+
+<div class="card">
+  <h2>Observed outcomes by score — derivation cohort (n = 421)</h2>
+  <table id="bands">
+    <thead><tr><th>ASCEND score</th><th class="num">Patients</th><th class="num">Good outcome (mRS 0–2)</th></tr></thead>
+    <tbody>
+      <tr data-lo="0"  data-hi="20"><td>0 – 19</td><td class="num">58</td><td class="num">69%</td></tr>
+      <tr data-lo="20" data-hi="30"><td>20 – 29</td><td class="num">54</td><td class="num">56%</td></tr>
+      <tr data-lo="30" data-hi="40"><td>30 – 39</td><td class="num">75</td><td class="num">47%</td></tr>
+      <tr data-lo="40" data-hi="50"><td>40 – 49</td><td class="num">72</td><td class="num">33%</td></tr>
+      <tr data-lo="50" data-hi="60"><td>50 – 59</td><td class="num">66</td><td class="num">26%</td></tr>
+      <tr data-lo="60" data-hi="70"><td>60 – 69</td><td class="num">46</td><td class="num">11%</td></tr>
+      <tr data-lo="70" data-hi="80"><td>70 – 79</td><td class="num">24</td><td class="num">8%</td></tr>
+      <tr data-lo="80" data-hi="999"><td>≥ 80</td><td class="num">26</td><td class="num">4%</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:12.5px;color:#777;margin:10px 0 0">The highlighted row is this patient's band. The headline probability above is a logistic fit to these data (P(good) = 1 / (1 + e<sup>−(1.5419 − 0.05129·score)</sup>)).</p>
+</div>
+
+<div class="card">
+  <h2>How the score has been validated</h2>
+  <table>
+    <thead><tr><th>Cohort</th><th class="num">n</th><th class="num">Good outcome</th><th class="num">AUC (95% CI)</th></tr></thead>
+    <tbody>
+      <tr><td>Derivation holdout (Penn, internal)</td><td class="num">84</td><td class="num">36.6%</td><td class="num">0.854 (0.775–0.934)</td></tr>
+      <tr><td>Temporal validation cohort (Penn, 2024–2026)</td><td class="num">250</td><td class="num">24.4%</td><td class="num">0.738 (0.676–0.799)</td></tr>
+      <tr><td>University of Louisville (independent site)</td><td class="num">731</td><td class="num">36.0%</td><td class="num">0.725 (0.688–0.762)</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:13px;color:#555;margin:10px 0 0">The score was applied without refitting in both external cohorts. Want to validate it on your own patients? <a href="index.html">Use the validator</a> — it runs entirely on your computer and no patient data leaves your machine.</p>
+</div>
+
+<p class="foot">Research tool; not for sole clinical decision-making. Source and methods: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a>.</p>
+
 <script>
-// Pre-operative risk score (published integer points)
+// ASCEND score (published integer points)
 var POINTS={nihss:2,cancer:22,dm:7,ambul:7,premrs:6,smoke:2}, THR=42;
-// Probability of good outcome (mRS<=2), logistic calibrated to derivation data:
-//   P(good) = 1 / (1 + exp(-(A + B*score))),  fit on n=421
+// Probability of good outcome (mRS<=2): logistic calibrated to the derivation data (n=421).
+//   P(good) = 1 / (1 + exp(-(A + B*score)))
 var A=1.5419, B=-0.05129;
 function val(id){var e=document.getElementById(id);var v=parseFloat(e.value);return isNaN(v)?0:v;}
 function compute(){
@@ -54,16 +109,22 @@ function compute(){
             POINTS.ambul*val("ambul")+POINTS.premrs*val("premrs")+POINTS.smoke*val("smoke");
   var p=1/(1+Math.exp(-(A+B*score)));           // P(good)
   var pct=Math.round(p*100);
+  document.getElementById("score").textContent=score;
   document.getElementById("pgood").textContent=pct+"%";
-  var band=document.getElementById("band");
-  var col,txt;
+  var band=document.getElementById("band"), col, txt;
   if(p>=0.60){col="#0a7d32";txt="Favorable predicted outcome";}
   else if(p>=0.35){col="#b8860b";txt="Intermediate";}
   else{col="#c62828";txt="Unfavorable predicted outcome";}
   band.style.background=col; band.textContent=txt;
   document.getElementById("meta").innerHTML=
-    "Risk score = <b>"+score+"</b> &nbsp;·&nbsp; predicted probability of poor outcome (mRS 3–6) = <b>"+(100-pct)+"%</b>"+
-    "<br>Published risk-score cut: ≥ "+THR+" flags higher risk (this patient: "+(score>=THR?"≥"+THR+", higher-risk band":"< "+THR+", lower-risk band")+").";
+    "Predicted probability of <b>poor outcome</b> (mRS 3–6) = <b>"+(100-pct)+"%</b>"+
+    "<br>Published cutoff ≥ "+THR+": this patient is "+(score>=THR?"<b>≥ "+THR+"</b> (higher-risk band)":"<b>&lt; "+THR+"</b> (lower-risk band)")+".";
+  // highlight the derivation-cohort band
+  var rows=document.querySelectorAll("#bands tbody tr");
+  for(var i=0;i<rows.length;i++){
+    var lo=+rows[i].getAttribute("data-lo"), hi=+rows[i].getAttribute("data-hi");
+    rows[i].className=(score>=lo&&score<hi)?"hl":"";
+  }
 }
 ["nihss","cancer","dm","ambul","premrs","smoke"].forEach(function(id){
   document.getElementById(id).addEventListener("input",compute);
