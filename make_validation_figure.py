@@ -20,8 +20,8 @@ def load(paths, score):
     sites=[]
     for p in paths:
         d=json.load(open(p))
-        # v2 (both scores) or v1 (single) fallback
-        if d.get("schema","").startswith("validation_export/v2"):
+        # v2/v3 (both scores; v3 adds cohort_summary) or v1 (single) fallback
+        if d.get("schema","").startswith(("validation_export/v2","validation_export/v3")):
             sc=d["scores"].get(score) or d["scores"][list(d["scores"])[0]]
             skey=score+"_score"
             rows=[r for r in d.get("rows",[]) if r.get("observed") in ("poor","good") and r.get(skey) not in (None,"")]

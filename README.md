@@ -25,7 +25,9 @@ evaluates each score separately (AUC, sensitivity/specificity, ROC), and each
 patient's row shows both scores.
 
 **mTICI:** TICI may be entered as recorded (`0, 1, 2a, 2b, 2c, 3`) or as the
-study's 0–5 encoding — the tool recodes `2a→2, 2b→3, 2c→4, 3→5` automatically.
+study's 0–5 encoding. The web app decides which **for the whole column**, not
+value by value (see *Coding checks* below), and recodes mTICI grades
+`2a→2, 2b→3, 2c→4, 3→5`. In a column using the 0–5 encoding, a `3` stays 3 (= 2b).
 
 **Scope:** the tool validates only the variables these two scores need — it is
 deliberately not a general data-quality check on your whole cohort.
@@ -70,6 +72,74 @@ cell-for-cell on the same data).
 > <https://jonah-keller.github.io/stroke-score-validator/> — it is also
 > client-side only, but **use the local `./start.sh` for real PHI** so the file
 > is served from your own machine and your compliance story is airtight.
+
+---
+
+## Coding checks (web app)
+
+Under every yes/no or category column, the column matcher lists each distinct
+value in your file and the code it will get. Common values (Yes/No, Y/N,
+True/False, 1/0, "current / former / never", "mRS 3") are filled in
+automatically; change any dropdown if one is wrong. **A value with no code is
+treated as missing and counted, never silently as 0.** It is also listed in the
+report under "Values with no assigned code". Some columns need an explicit answer
+before you can score:
+
+- **TICI:** the app reads the whole column. Any `2a/2b/2c`, or numbers no
+  higher than 3, means mTICI grades. Any 4 or 5 (with no letters) means the
+  study's 0–5 encoding. If the column mixes both, you choose. Under mTICI grades a
+  bare `2` is ambiguous (2a, 2b or 2c?), so it is treated as missing and flagged.
+- **Pre-stroke ambulatory status:** the study codes **1 = needs assistance /
+  non-ambulatory**. Text such as "independent" or "wheelchair" is coded by meaning.
+  If your column is just 0/1 or yes/no, you must say whether 1 / Yes means
+  independent or dependent.
+- **Smoking:** the study codes 0 = never, 1 = current, 2 = former. If your column
+  has only two values (yes/no or 0/1), former smokers can't be told apart. The app
+  warns that they will be under-scored (by 2 points if "yes" means ever-smoker,
+  by 4 if it means current smoker) and asks which one "yes" means.
+
+The final value → code table, the TICI coding (and whether it was auto-detected
+or chosen) and these answers are written into **both** exports, with no counts,
+so we can audit the coding.
+
+---
+
+## Cohort summary for the comparison table (aggregate only)
+
+To compare cohort characteristics across sites, the app can also produce a
+**cohort summary**, which contains summary statistics only. In the column matcher, below the score variables,
+an optional section **"Cohort characteristics"** asks for these columns. Map
+whichever you have and leave the rest as *(not present)*:
+
+| Variable | What to map | Notes |
+|---|---|---|
+| `sex` | sex / gender | F/M and female/male are recognised. For numeric codes (e.g. 1/2), pick which value means Female/Male in the small dropdowns that appear |
+| `race` | race | Grouped into the standard OMB categories; unrecognised text goes to *Other* (the summary says how many) |
+| `ethnicity` | Hispanic / Latino ethnicity | If you have no ethnicity column, or it is blank, and the race column says "Hispanic"/"Latino", that patient is counted as Hispanic or Latino (race = Unknown/declined unless another race is named). The page tells you when it does this |
+| `iv_thrombolysis` | IV alteplase / tenecteplase given | Y/N, yes/no, 1/0, true/false, or the drug name |
+| `prior_stroke` | prior stroke | yes/no |
+| `occlusion_site` | occlusion / clot location | Grouped into ICA, M1, M2, distal/MeVO, posterior, other |
+| `lkn_datetime` + `puncture_datetime` | last-known-normal and groin-puncture date/times | Used only to compute LKN-to-puncture minutes. Excel dates, ISO and `M/D/YYYY HH:MM` all work. Values < 0 or > 7 days are dropped and counted |
+| `lkn_to_puncture_min` | *or* a column already in minutes | Used instead of the two date/times if mapped |
+| `procedure_date` | thrombectomy date | Used **only** for the first and last month of enrollment |
+
+The summary also includes the score variables you already mapped: age, NIHSS,
+pre-stroke mRS, ambulatory status, cancer, diabetes, smoking, % mTICI ≥ 2b,
+passes, 90-day mRS 0–2 and mRS 6, and the pre-operative score (median/IQR,
+mean/SD, % ≥ 42).
+
+**What leaves your site:** only counts, percentages, medians/IQR, means/SD and
+the first/last month of enrollment (`YYYY-MM`). It contains no patient rows and no individual
+dates. **Any count of 1–10 patients is exported as `<11`**, with its percentage
+withheld. If that leaves only one hidden level, the next-smallest level is also
+withheld so it can't be worked out from the total. Continuous summaries are
+exported only when at least 11 patients have a value. The **Cohort
+characteristics** table in the report shows exactly what is exported.
+
+After **Validate & Score**, the **Researcher export** now carries the cohort
+summary inside it (`validation_export/v3`), so you only need to send that one file.
+The **Cohort summary (aggregate only)** button downloads the same summary on
+its own as `cohort_summary.json`.
 
 ---
 

@@ -36,6 +36,8 @@
   select { width:100%; padding:5px; border:1px solid #c7ccd4; border-radius:6px; background:#fff; font-size:13px; }
   .sample { font-size:12px; color:var(--mut); font-family:ui-monospace,Menlo,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .guessed select { border-color:var(--green); }
+  .vmap { padding:2px 0 8px 220px; font-size:12px; line-height:2; }
+  .vmap:empty { display:none; }
   button { font-size:14px; padding:9px 18px; border-radius:8px; border:1px solid var(--blue);
            background:var(--blue); color:#fff; cursor:pointer; }
   button.sec { background:#fff; color:var(--blue); }
@@ -60,11 +62,18 @@
 
 <div id="mapper" class="hidden">
   <h2>Match your columns</h2>
-  <div class="sub">We guessed the best match for each study variable and show sample values. Confirm or change any dropdown. <span style="color:var(--green)">Green</span> = auto-matched.</div>
+  <div class="sub">We guessed the best match for each study variable and show sample values. Confirm or change any dropdown. <span style="color:var(--green)">Green</span> = auto-matched.
+    Under each yes/no or category column we list every distinct value and the code it will get — check them. Values with no code count as missing (never as 0); red text marks a question you must answer.</div>
   <div class="maprow" style="font-weight:700;border-bottom:2px solid var(--line)">
     <div>Study variable</div><div>Your column</div><div>Sample values</div>
   </div>
   <div id="maprows"></div>
+  <h2 style="font-size:17px;margin-top:30px">Cohort characteristics (for the comparison table — optional)</h2>
+  <div class="sub">Map any of these you have; leave the rest as “(not present)”. Together with the score variables above they feed a
+    <b>cohort summary that contains aggregates only</b> — counts, percentages, medians/IQR, means/SD and the first/last month of enrollment.
+    No patient rows or individual dates are exported. Any count of 1–10 patients is shown and exported as <code>&lt;11</code>.</div>
+  <div id="cohortrows"></div>
+  <div id="ethhint" class="note" style="margin-top:6px"></div>
   <div class="toolbar">
     <label class="muted">Row ID column (optional):
       <select id="idcol" style="width:auto;display:inline-block"></select></label>
@@ -73,6 +82,7 @@
     <button id="run">Validate &amp; Score</button>
     <button id="reset" class="sec">Start over</button>
   </div>
+  <div id="runmsg"></div>
 </div>
 
 <div id="results"></div>
@@ -96,9 +106,9 @@ const VARIABLE_SPEC = [
   V("tici","TICI (mTICI or 0-5)","ordinal",{allowed:[0,1,2,3,4,5]}),
   V("number_of_passes","Number of passes","integer",{min:0,max:10}),
   V("hx_dm2","History: diabetes (T2)","binary"),
-  V("pre_stroke_ambulatory_status","Pre-stroke ambulatory (0=indep,1=non)","binary"),
+  V("pre_stroke_ambulatory_status","Pre-stroke ambulatory: 0 = independent, 1 = needs assistance / non-ambulatory","binary"),
   V("mrs_pre_stroke","Pre-stroke mRS","ordinal",{allowed:[0,1,2,3,4,5]}),
-  V("hx_smoking","Smoking status","ordinal",{allowed:[0,1,2]}),
+  V("hx_smoking","Smoking: 0 = never, 1 = current, 2 = former","ordinal",{allowed:[0,1,2]}),
   V("mrs_90day","mRS at 90 days","ordinal",{allowed:[0,1,2,3,4,5,6],required:true,max_missing_frac:0.30}),
   V("mortality_hospital","In-hospital mortality","binary"),
   V("mrs_6month","mRS at 6 months","ordinal",{allowed:[0,1,2,3,4,5,6],max_missing_frac:0.40})
@@ -133,13 +143,34 @@ const RISK_SCORES = [
     equation:"(2 × nihss) + (22 × hx_cancer) + (7 × hx_dm2) + (7 × ambulatory) + (6 × pre_stroke_mrs) + (2 × smoking)" }
 ];
 const scoreProb = (s, sc) => 1/(1+Math.exp(-(sc.intercept - s/SCALE_FACTOR)));
-// mTICI (0,1,2a,2b,2c,3) -> 0-5; numeric 0-5 pass through
-function recodeTici(x){
-  if (x==null) return null;
-  const k=String(x).trim().toLowerCase();
-  const m={"0":0,"1":1,"2a":2,"2b":3,"2c":4,"3":5};
-  if (k in m) return m[k];
-  const v=Number(k); return Number.isNaN(v)?x:v;
+// TICI coding is decided per COLUMN (detectTiciScheme), never per value:
+//   "mtici"   = grades as recorded 0,1,2a,2b,2c,3  -> 0,1,2,3,4,5  (a bare "2" is ambiguous -> undefined)
+//   "study05" = the study's 0-5 encoding           -> passed through (a "3" stays 3 = 2b)
+// recodeTici returns a 0-5 code, null for blank, or undefined if the value has no code under the scheme.
+const TICI_SCHEMES = {mtici:"mTICI grades (0, 1, 2a, 2b, 2c, 3)", study05:"study 0–5 encoding (2b = 3)"};
+function ticiToken(x){
+  return String(x).trim().toLowerCase().replace(/^(m|e)?tici\s*(grade)?\s*[:\-]?\s*/,"").replace(/\s+/g,"").replace(/^(\d)\.0+$/,"$1");
+}
+function recodeTici(x, scheme){
+  if (scheme!=="mtici" && scheme!=="study05") throw new Error("recodeTici: scheme must be 'mtici' or 'study05'");
+  if (x==null || /^(|na|n\/a|\.|nan|null)$/i.test(String(x).trim())) return null;
+  const k=ticiToken(x);
+  if (scheme==="mtici"){ const m={"0":0,"1":1,"2a":2,"2b":3,"2c":4,"3":5}; return (k in m) ? m[k] : undefined; }
+  return /^[0-5]$/.test(k) ? Number(k) : undefined;
+}
+function detectTiciScheme(values){
+  let letters=false, has45=false, maxNum=-1, other=false, any=false;
+  for (const x of values){ if (x==null || /^(|na|n\/a|\.|nan|null)$/i.test(String(x).trim())) continue;
+    any=true; const k=ticiToken(x);
+    if (/^2[abc]$/.test(k)) letters=true;
+    else if (/^\d+$/.test(k)){ const v=+k; if(v>=4) has45=true; if(v>maxNum) maxNum=v; }
+    else other=true; }
+  if (!any) return {scheme:null, reason:"no TICI values"};
+  if (letters && has45) return {scheme:null, reason:"mixed: letter grades (2a/2b/2c) and 4/5 both present — choose the coding"};
+  if (letters) return {scheme:"mtici", reason:"letter grades (2a/2b/2c) present"};
+  if (has45) return {scheme:"study05", reason:"values 4/5 present and no letter grades"};
+  if (maxNum>=0) return {scheme:"mtici", reason:"numbers only, none above 3 — read as mTICI grades"};
+  return {scheme:null, reason:"no recognisable TICI values"};
 }
 
 // numeric parse: "" / null -> null (missing); non-numeric -> NaN (coercion error)
@@ -175,7 +206,17 @@ const SYN = {
   complication_access_site:["accesssite","accesscomplication","groincomplication"],
   mortality_hospital:["mortality","inhospitalmortality","death","died","hospitaldeath","expired"],
   mrs_90day:["mrs90","mrs90day","mrs90d","rankin90","mrs3month","mrsat90","threemonthmrs","mrs090"],
-  mrs_6month:["mrs6month","mrs6mo","mrs180","sixmonthmrs","mrs6m","mrs6"]
+  mrs_6month:["mrs6month","mrs6mo","mrs180","sixmonthmrs","mrs6m","mrs6"],
+  // cohort-characteristics variables (optional; COHORT_SPEC below)
+  race:["race","racecategory","patientrace","raceomb","racedescription"],
+  ethnicity:["ethnicity","hispanic","hispanicethnicity","hispaniclatino","latino","ethnicgroup","ethnic"],
+  iv_thrombolysis:["ivthrombolysis","ivt","ivtpa","tpa","alteplase","tenecteplase","tnk","thrombolysis","ivlytic","lytic","thrombolytic","bridgingthrombolysis","ivtpagiven","tpagiven"],
+  prior_stroke:["priorstroke","hxstroke","historyofstroke","previousstroke","strokehistory","priorcva","hxcva","priorstroketia"],
+  occlusion_site:["occlusionsite","occlusionlocation","thrombuslocation","clotlocation","vesselocclusion","occludedvessel","lvosite","occlusion","sitelvo"],
+  lkn_datetime:["lkndatetime","lkntime","lastknownnormal","lastknownwell","lkw","lkwtime","lkwdatetime","lkn","onsettime","onsetdatetime","symptomonset","lastseenwell","lsw"],
+  puncture_datetime:["puncturedatetime","puncturetime","groinpuncture","groinpuncturetime","arterialpuncture","arterialpuncturetime","puncture","groin","groindatetime","groinpuncturedatetime"],
+  lkn_to_puncture_min:["lkntopuncture","lkntopuncturemin","lkntopuncturetime","lkntogroin","lkwtopuncture","lkwtogroin","onsettopuncture","onsettogroin","timetopuncture","lkntopuncturemins"],
+  procedure_date:["proceduredate","thrombectomydate","dateofprocedure","procdate","evtdate","mtdate","dateofthrombectomy","dateofservice","admissiondate","admitdate"]
 };
 function bigrams(s){ const b={}; for(let i=0;i<s.length-1;i++){const g=s.slice(i,i+2); b[g]=(b[g]||0)+1;} return b; }
 function dice(a,b){ if(!a.length||!b.length) return 0; const A=bigrams(a),B=bigrams(b); let inter=0,na=0,nb=0;
@@ -220,13 +261,14 @@ function auc(scores, pos){
 }
 
 // ---- main validation --------------------------------------------------------
-// rows: array of objects keyed by original header. map: {canonical: header|null}.
+// rows: array of objects keyed by original header (NOT mutated). map: {canonical: header|null},
+// optionally plus value_maps / tici_scheme / coding_choices (see resolveCoding). Categorical and
+// binary variables are coded through resolveCoding: a raw value with no assigned code is reported
+// as an exception and treated as missing — never silently coerced.
 function runValidation(rows, map, idCol){
   const n = rows.length;
   const rowIds = rows.map((r,i)=> (idCol && r[idCol]!=null && String(r[idCol])!=="") ? String(r[idCol]) : String(i+1));
-  // normalize mTICI -> 0-5 in place so checks and scoring agree
-  const ticiSrc = map.tici;
-  if (ticiSrc) for(let i=0;i<n;i++) rows[i][ticiSrc]=recodeTici(rows[i][ticiSrc]);
+  const coding = resolveCoding(rows, map);
   const exceptions = [];
   const add=(i,check,variable,value,expected)=>exceptions.push({row_id:rowIds[i],row_num:i+1,check,variable,value:(value==null?"":String(value)),expected});
   const varSummary=[]; const presentMap={}; const missingRequired=[];
@@ -240,10 +282,15 @@ function runValidation(rows, map, idCol){
     const raw = rows.map(r=>r[src]);
     let nMissing=0,nType=0,nRange=0;
     const numTypes=["continuous","integer","binary","ordinal"];
+    const cv=coding.vars[sp.name];
     for (let i=0;i<n;i++){
       const cell=raw[i];
       const isMiss = cell==null || String(cell).trim()==="" || /^(na|n\/a|\.)$/i.test(String(cell).trim());
       if (isMiss){ nMissing++; if(!sp.allow_na) add(i,"missing",sp.name,null,"non-missing value"); continue; }
+      if (cv){ const c=codeOf(cv,cell);
+        if (c===null){ nMissing++; continue; }                         // user chose "treat as missing"
+        if (c===undefined){ add(i,"coding",sp.name,cell,cv.reasons[ckey(cell)]||"a value assigned a code in the column matcher (treated as missing)"); nRange++; }
+        continue; }
       if (numTypes.includes(sp.type)){
         const v=pnum(cell);
         if (Number.isNaN(v)){ add(i,"type",sp.name,cell,"numeric value"); nType++; continue; }
@@ -267,7 +314,9 @@ function runValidation(rows, map, idCol){
   // numeric canonical frame for logic rules + scoring
   const cf = rows.map(()=>({}));
   for (const canon in presentMap){ const sp=VARIABLE_SPEC.find(x=>x.name===canon); const src=presentMap[canon];
+    const cv=coding.vars[canon];
     for(let i=0;i<n;i++){ const val=rows[i][src];
+      if (cv){ const c=codeOf(cv,val); cf[i][canon]=(c==null)?null:c; continue; }
       cf[i][canon] = (sp.type==="categorical") ? (val==null?null:String(val)) : pnum(val); } }
 
   const ruleSummary=[];
@@ -316,7 +365,7 @@ function runValidation(rows, map, idCol){
     o.observed = good[i]==null?"":(good[i]?"good":"poor"); return o; });
 
   return {exceptions,varSummary,ruleSummary,missingRequired,
-          score:{scores,scored,good}, n, rowIds};
+          score:{scores,scored,good}, n, rowIds, coding:codingRecord(coding)};
 }
 
 // ---- CSV / TSV parser (pure) ------------------------------------------------
@@ -339,9 +388,485 @@ function parseDelimited(text){
   const data=nonEmpty.slice(1).map(r=>{const o={}; headers.forEach((h,j)=>o[h]=r[j]==null?"":r[j]); return o;});
   return {headers,rows:data};
 }
+
+/* ---- cohort characteristics: AGGREGATE-ONLY summary (pure) ------------------
+   Nothing per-patient leaves this function: only counts, percentages and
+   summary statistics, with small cells suppressed. Raw text values (e.g. race
+   strings) are never copied into the output. */
+const SUPPRESS_MAX = 10;                       // counts 1..10 -> "<11"
+const MIN_N_CONTINUOUS = 11;                   // continuous stats only if n >= 11
+const LKN_PUNCT_MAX_MIN = 1440*7;              // > 7 days = implausible
+const SUPPRESSION_RULE = "Any count of 1-10 patients is exported as \"<11\" with its percentage withheld. "+
+  "If only one level of a variable is suppressed, the next-smallest level is also withheld (\"suppressed\") so the hidden count cannot be back-calculated from n. "+
+  "Continuous summaries are exported only when n >= 11. Dates appear only as the cohort's first and last month (YYYY-MM). "+
+  "Missing / unreadable counts are data-completeness counts and are not suppressed.";
+const COHORT_SPEC = [
+  {name:"sex", label:"Sex", kind:"sex"},
+  {name:"race", label:"Race", kind:"race"},
+  {name:"ethnicity", label:"Ethnicity", kind:"ethnicity"},
+  {name:"iv_thrombolysis", label:"IV thrombolysis (alteplase / tenecteplase)", kind:"yesno"},
+  {name:"prior_stroke", label:"Prior stroke", kind:"yesno"},
+  {name:"occlusion_site", label:"Occlusion site", kind:"occlusion"},
+  {name:"lkn_datetime", label:"Last-known-normal date/time", kind:"datetime"},
+  {name:"puncture_datetime", label:"Groin-puncture date/time", kind:"datetime"},
+  {name:"lkn_to_puncture_min", label:"LKN-to-puncture, minutes (if already computed; overrides the two date/times)", kind:"number"},
+  {name:"procedure_date", label:"Thrombectomy date (used only for first/last month)", kind:"date"}
+];
+const RACE_LEVELS = ["White","Black or African American","Asian","American Indian or Alaska Native",
+  "Native Hawaiian or Other Pacific Islander","More than one race","Other","Unknown/declined"];
+const ETH_LEVELS = ["Hispanic or Latino","Not Hispanic or Latino","Unknown"];
+const OCC_LEVELS = ["ICA","M1","M2","Distal/MeVO (M3/M4/ACA/PCA)","Posterior (basilar/vertebral)","Other"];
+
+// Like suggestMap, but for COHORT_SPEC; each column used at most once and
+// never one already taken by a score variable (exclude).
+function suggestCohortMap(headers, exclude){
+  const used=new Set((exclude||[]).filter(Boolean));
+  const cand=[];
+  for (const v of COHORT_SPEC) for (const h of headers){ if(used.has(h)) continue;
+    const s=scoreMatch(norm(h), v); if (s>=0.55) cand.push([s,v.name,h]); }
+  cand.sort((a,b)=>b[0]-a[0]);
+  const map={}; COHORT_SPEC.forEach(v=>map[v.name]=null);
+  for (const [,vn,h] of cand){ if(map[vn]||used.has(h)) continue; map[vn]=h; used.add(h); }
+  return map;
+}
+
+const ckey = x => String(x).trim().toLowerCase().replace(/\s+/g," ");
+const isBlank = x => x==null || /^(|na|n\/a|\.|nan|null|#n\/a)$/i.test(String(x).trim());
+const UNK_RE = /unknown|declin|refus|not reported|not specified|not recorded|unavailable|not available|prefer not|not disclosed|^unk$|^u$|^\?$/;
+
+// sex: returns "Female" | "Male" | "Unknown" | undefined (cannot tell; needs a value map)
+function sexAuto(raw){
+  if (isBlank(raw)) return null; const s=ckey(raw);
+  if (/^(f|fem|female|woman|w)$/.test(s)) return "Female";
+  if (/^(m|male|man)$/.test(s)) return "Male";
+  if (UNK_RE.test(s)) return "Unknown";
+  return undefined;    // numeric codes etc. are ambiguous
+}
+function sexCode(raw, vmap){
+  if (isBlank(raw)) return null;
+  const k=ckey(raw);
+  if (vmap && vmap[k]) return vmap[k];
+  return sexAuto(raw);
+}
+// race: returns [level, foldedIntoOther, ethnicityHint]
+// Many registries put Hispanic/Latino in the race field. Such values give
+// ethnicityHint "Hispanic or Latino" and race = the other race named alongside
+// it ("White Hispanic" -> White), else "Unknown/declined" (never folded into Other).
+// "Non-Hispanic White" -> White with hint "Not Hispanic or Latino".
+const HISP_RE=/hispanic|latin[oax]|latine|\bhisp\b/;
+const NONHISP_RE=/(non|not)[ -]?(hispanic|latin[oax]?|latine|hisp\b)/;
+function raceCode(raw){
+  if (isBlank(raw)) return [null,false,null]; const s=ckey(raw);
+  if (NONHISP_RE.test(s)){
+    const rest=s.replace(new RegExp(NONHISP_RE.source,"g")," ").replace(/\b(or|and)\b|[,;:/()\-]+/g," ").trim();
+    const r = rest ? raceBase(rest) : ["Unknown/declined",false];
+    return [r[0], r[1], "Not Hispanic or Latino"]; }
+  if (HISP_RE.test(s)){
+    const rest=s.replace(/hispanic|latin[oax]|latine|\bhisp\b/g," ").replace(/\b(or|and|other)\b|[,;:/()\-]+/g," ").trim();
+    const r = rest ? raceBase(rest) : null;
+    return [(r && !r[1]) ? r[0] : "Unknown/declined", false, "Hispanic or Latino"]; }
+  const r=raceBase(s); return [r[0], r[1], null];
+}
+function raceBase(s){
+  if (UNK_RE.test(s)) return ["Unknown/declined",false];
+  if (/more than one|multi|two or more|2 or more|mixed|biracial/.test(s)) return ["More than one race",false];
+  if (/american indian|alaska|native american|^ai\/?an$|indigenous/.test(s)) return ["American Indian or Alaska Native",false];
+  if (/hawaiian|pacific island|^nh\/?pi$/.test(s) && !/asian/.test(s)) return ["Native Hawaiian or Other Pacific Islander",false];
+  if (/black|african/.test(s) || s==="b") return ["Black or African American",false];
+  if (/white|caucasian/.test(s) || s==="w") return ["White",false];
+  if (/asian|chinese|japanese|korean|vietnam|filipin|indian|pakistan|bangladesh/.test(s)) return ["Asian",false];
+  if (/^(other|other race|some other race)$/.test(s)) return ["Other",false];
+  return ["Other",true];
+}
+// ethnicity: returns [level, unrecognized]
+function ethCode(raw){
+  if (isBlank(raw)) return [null,false]; const s=ckey(raw);
+  if (UNK_RE.test(s)) return ["Unknown",false];
+  if (/(non|not)[ -]?(hisp|latin)/.test(s) || /^(n|no|false)$/.test(s)) return ["Not Hispanic or Latino",false];
+  if (/hisp|latin/.test(s) || /^(y|yes|true)$/.test(s)) return ["Hispanic or Latino",false];
+  return ["Unknown",true];
+}
+// yes/no: 1 | 0 | null (blank) | NaN (unreadable)
+function yesNo(raw){
+  if (isBlank(raw)) return null; const s=ckey(raw);
+  if (/^(n|no|0|0\.0|false|f|none|neg|negative)$/.test(s) || /^no\b|^not\b|not given|^none\b/.test(s)) return 0;
+  if (/^(y|yes|1|1\.0|true|t|x|given|pos|positive)$/.test(s) ||
+      /alteplase|tenecteplase|tpa|tnk|activase|tnkase|thromboly|^iv\b/.test(s)) return 1;
+  return NaN;
+}
+// occlusion site: returns [level, foldedIntoOther]  (most proximal wins for tandem/multiple)
+function occCode(raw){
+  if (isBlank(raw)) return [null,false]; const s=ckey(raw);
+  if (UNK_RE.test(s)) return [null,false];
+  const w = "(^|[^a-z0-9])";
+  if (new RegExp(w+"[lrt]?-?ica([^a-z]|$)").test(s) || /carotid/.test(s)) return ["ICA",false];   // L ICA, T-ICA, tICA, ICA-T; not PICA
+  if (/basilar|vertebr|pica|aica|\bsca\b/.test(s) || new RegExp(w+"(ba|va|vba|vb)([^a-z]|$)").test(s)) return ["Posterior (basilar/vertebral)",false];
+  if (new RegExp(w+"[lr]?m1([^0-9]|$)").test(s)) return ["M1",false];
+  if (new RegExp(w+"[lr]?m2([^0-9]|$)").test(s)) return ["M2",false];
+  if (new RegExp(w+"[lr]?(m3|m4|aca|pca|a[1-3]|p[1-3])([^0-9a-z]|$)").test(s) ||
+      /distal|mevo|medium vessel|anterior cerebral|posterior cerebral/.test(s)) return ["Distal/MeVO (M3/M4/ACA/PCA)",false];
+  if (/^other$/.test(s)) return ["Other",false];
+  return ["Other",true];
+}
+
+// ---- explicit value coding (score AND cohort variables) ------------------------
+// Every categorical/binary column is coded raw value -> code through one table.
+// The table is auto-filled only where the meaning is unambiguous; the user can
+// override any entry (mapping.value_maps[var][rawKey] = code | "__missing"), and
+// direction questions (ambulatory, binary smoking) must be answered explicitly
+// (mapping.coding_choices). A raw value with no code is MISSING and counted —
+// never silently 0.
+const MISSING_CODE="__missing";
+const isYesTok = s => /^(y|yes|1|1\.0|true|t)$/.test(s);
+const isNoTok  = s => /^(n|no|0|0\.0|false|f)$/.test(s);
+function autoBinary(raw){ const v=yesNo(raw); return (v===0||v===1)?v:undefined; }
+function autoMortality(raw){ const s=ckey(raw);
+  if (/alive|surviv|discharged|living/.test(s)) return 0;
+  if (/died|dead|death|expired|deceased/.test(s)) return 1;
+  return autoBinary(raw); }
+// study: 0 = independent / ambulatory, 1 = needs assistance / non-ambulatory.
+// Text is mapped by meaning; bare 0/1 or yes/no -> undefined (direction must be chosen).
+function autoAmbulatory(raw){ const s=ckey(raw);
+  if (/without assist|unassisted|no assist/.test(s)) return 0;
+  if (/non[- ]?ambul|not ambul|non[- ]?indep|not indep|\bdepend|assist|wheelchair|bed|walker|cane|unable|cannot|non[- ]?walk|immobile/.test(s)) return 1;
+  if (/independ|ambulat|walks?\b|mobile/.test(s)) return 0;
+  return undefined; }
+// study: 0 never / 1 current / 2 former. A numeric 1 is only "current" if the column also has 2s.
+function autoSmoking(raw, ctx){ const s=ckey(raw);
+  if (/former|ex[- ]?smok|quit|past|previous|prior|remote/.test(s)) return 2;
+  if (/never|non[- ]?smok|nonsmok|^none$/.test(s)) return 0;
+  if (/current|active|daily|every day|some days|^smoker$|^smokes$/.test(s)) return 1;
+  if (/^[0-2](\.0+)?$/.test(s)){ const v=parseInt(s,10); if (v===0) return 0; return ctx.has2 ? v : undefined; }
+  if (isNoTok(s)) return 0;
+  return undefined; }
+const autoMrs = max => raw => {
+  const s=ckey(raw).replace(/^(m?rs|modified rankin( scale)?( score)?)\s*[:=\-]?\s*/,"");
+  if (max===6 && /^(dead|died|death|deceased|expired)$/.test(s)) return 6;
+  const m=/^(\d+)(\.0+)?(\s*[-–:(].*)?$/.exec(s);
+  if (m){ const v=+m[1]; return v<=max ? v : undefined; }
+  return undefined; };
+const YN=[[1,"Yes"],[0,"No"]];
+const lv = arr => arr.map(x=>[x,String(x)]);
+const mrsLv = max => Array.from({length:max+1},(_,v)=>[v,"mRS "+v]);
+const CODED = {
+  tici:{tici:true, levels:[[0,"0"],[1,"1"],[2,"2 (= 2a)"],[3,"3 (= 2b)"],[4,"4 (= 2c)"],[5,"5 (= 3)"]]},
+  hx_cancer:{levels:YN, auto:autoBinary},
+  hx_dm2:{levels:YN, auto:autoBinary},
+  pre_stroke_ambulatory_status:{levels:[[0,"0 = independent / ambulatory"],[1,"1 = needs assistance / non-ambulatory"]], auto:autoAmbulatory},
+  hx_smoking:{levels:[[0,"0 = never"],[1,"1 = current"],[2,"2 = former"]], auto:autoSmoking},
+  mrs_pre_stroke:{levels:mrsLv(5), auto:autoMrs(5)},
+  mrs_90day:{levels:mrsLv(6), auto:autoMrs(6)},
+  mrs_6month:{levels:mrsLv(6), auto:autoMrs(6)},
+  mortality_hospital:{levels:[[1,"Died in hospital"],[0,"Alive at discharge"]], auto:autoMortality},
+  sex:{levels:lv(["Female","Male","Unknown"]), auto:r=>sexAuto(r)},
+  race:{levels:lv(RACE_LEVELS), auto:r=>raceCode(r)[0], folded:r=>raceCode(r)[1]},
+  ethnicity:{levels:lv(ETH_LEVELS), auto:r=>{ const [c,u]=ethCode(r); return u?undefined:c; }},
+  iv_thrombolysis:{levels:YN, auto:autoBinary},
+  prior_stroke:{levels:YN, auto:autoBinary},
+  occlusion_site:{levels:lv(OCC_LEVELS), auto:r=>occCode(r)[0], folded:r=>occCode(r)[1]}
+};
+const SMOKING_BINARY_WARNING = "Your smoking column has only two values, so former smokers cannot be told apart from the others. "+
+  "The study codes 0 = never, 1 = current, 2 = former, so former smokers are under-scored on the pre-operative score: "+
+  "by 2 points if \"yes\" means ever-smoker (coded 1 instead of 2), or by 4 points if \"yes\" means current smoker (former smokers then sit under \"no\" = 0).";
+
+function resolveCoding(rows, map){
+  map=map||{}; const vmaps=map.value_maps||{}, ch=map.coding_choices||{};
+  const out={vars:{}, tici:null};
+  for (const name in CODED){ const col=map[name]; if(!col) continue; const C=CODED[name];
+    const distinct=new Map();
+    for (const r of rows){ const x=r[col]; if(isBlank(x)) continue; const k=ckey(x); if(!distinct.has(k)) distinct.set(k,String(x).trim()); }
+    const keys=[...distinct.keys()];
+    const v={name, levels:C.levels, display:Object.fromEntries(distinct), auto:{}, final:{}, reasons:{}, folded:{}, overridden:{},
+             required:[], warnings:[], choice:{}};
+    if (C.tici){
+      const det=detectTiciScheme([...distinct.values()]);
+      const sch=(map.tici_scheme==="mtici"||map.tici_scheme==="study05") ? map.tici_scheme : null;
+      const scheme=sch||det.scheme;
+      out.tici={scheme, scheme_label:scheme?TICI_SCHEMES[scheme]:null,
+        source: sch ? (sch===det.scheme?"auto-detected (confirmed by user)":"user override") : (det.scheme?"auto-detected":"unresolved"),
+        detected:det.scheme, detection_reason:det.reason};
+      for (const [k,d] of distinct){ let c;
+        if (!scheme){ c=undefined; v.reasons[k]="TICI coding not chosen ("+det.reason+")"; }
+        else { c=recodeTici(d,scheme);
+          if (c===undefined) v.reasons[k]=(scheme==="mtici"&&ticiToken(d)==="2")
+            ? "bare \"2\" is ambiguous under mTICI grades (2a, 2b or 2c?) — treated as missing"
+            : "not a valid value under "+TICI_SCHEMES[scheme]+" — treated as missing"; }
+        v.auto[k]=c; v.final[k]=c; }
+      if (!scheme && keys.length) v.required.push("Choose the TICI coding: "+det.reason+".");
+      if (scheme==="mtici" && [...distinct.values()].some(d=>ticiToken(d)==="2"))
+        v.warnings.push("Bare \"2\" values cannot be placed as 2a/2b/2c and are treated as missing.");
+      out.vars[name]=v; continue; }
+    const ctx={has2:keys.some(k=>/^2(\.0+)?$/.test(k))};
+    for (const [k,d] of distinct){ v.auto[k]=C.auto(d,ctx); if (C.folded&&C.folded(d)) v.folded[k]=true; }
+    let dirKeys=[];
+    if (name==="pre_stroke_ambulatory_status"){
+      dirKeys=keys.filter(k=>v.auto[k]===undefined&&(isYesTok(k)||isNoTok(k)));
+      const y=ch.ambulatory_yes_means;
+      if (dirKeys.length && (y==="independent"||y==="dependent")){
+        v.choice.yes_or_1_means = y==="dependent" ? "dependent / needs assistance" : "independent / ambulatory";
+        for (const k of dirKeys) v.auto[k] = isYesTok(k) ? (y==="dependent"?1:0) : (y==="dependent"?0:1); } }
+    if (name==="hx_smoking" && keys.length>0 && keys.length<=2 && !keys.some(k=>v.auto[k]===2)){
+      v.binary=true; v.warnings.push(SMOKING_BINARY_WARNING);
+      dirKeys=keys.filter(k=>v.auto[k]===undefined&&(isYesTok(k)||/^(smok|ever)/.test(k)));
+      const m=ch.smoking_yes_means;
+      if (m==="current"||m==="ever"){ v.choice.yes_or_1_means = m==="current"?"current smoker":"ever smoker (current or former)";
+        for (const k of dirKeys) v.auto[k]=1; } }
+    const vm=vmaps[name]||{};
+    for (const k of keys){
+      if (Object.prototype.hasOwnProperty.call(vm,k) && vm[k]!=="" && vm[k]!=null){
+        const o=vm[k]; v.overridden[k]=true; delete v.folded[k];
+        if (o===MISSING_CODE) v.final[k]=null;
+        else { const L=C.levels.find(l=>String(l[0])===String(o)); v.final[k]=L?L[0]:undefined; } }
+      else v.final[k]=v.auto[k];
+      if (v.final[k]===undefined) v.reasons[k]="no code assigned in the column matcher — treated as missing"; }
+    if (dirKeys.some(k=>v.final[k]===undefined)){
+      if (name==="pre_stroke_ambulatory_status") v.required.push("Your ambulatory column uses 0/1 or yes/no. Say whether 1 / Yes means independent or dependent (the study codes 1 = needs assistance / non-ambulatory).");
+      else v.required.push("Your smoking column has only two values. Say whether \"yes\" / 1 means current smoker or ever smoker."); }
+    out.vars[name]=v; }
+  return out;
+}
+// code for one raw cell: number/string code, null = missing, undefined = no code assigned
+function codeOf(cv, raw){ if (isBlank(raw)) return null; return cv.final[ckey(raw)]; }
+// Audit record for the exports: the raw -> code table (no counts), choices and warnings.
+function codingRecord(coding){
+  const o={tici:coding.tici, variables:{}};
+  for (const name in coding.vars){ const v=coding.vars[name], keys=Object.keys(v.display);
+    o.variables[name]={
+      table:keys.slice(0,40).map(k=>({raw:String(v.display[k]).slice(0,40), code:(v.final[k]===undefined?null:v.final[k]),
+        how: v.final[k]===undefined ? "no code (missing)" : v.final[k]===null ? "set to missing" : v.overridden[k] ? "set by user" : (v.folded[k]?"auto (unrecognised -> Other)":"auto")})),
+      n_distinct_values:keys.length, table_truncated:keys.length>40,
+      choice:v.choice, warnings:v.warnings, unresolved:v.required }; }
+  return o;
+}
+
+// ---- date/time parsing -> naive ms (UTC arithmetic, so no DST artefacts) ----
+// Accepts: Excel serial numbers (1950-2099), YYYYMMDD, ISO "YYYY-MM-DD[T ]HH:MM[:SS][Z|+hh:mm]",
+// "YYYY/MM/DD HH:MM", US "M/D/YYYY [H:MM[:SS] [AM|PM]]" (D/M if first part > 12),
+// "15-Jan-2023 14:30". Returns null for blank, NaN for unreadable.
+const MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+function mkTime(y,mo,d,h,mi,se,ampm,tz){
+  y=+y; mo=+mo; d=+d; h=h==null?0:+h; mi=mi==null?0:+mi; se=se==null?0:+se;
+  if (y<100) y += (y<70?2000:1900);
+  if (ampm){ const p=ampm.toLowerCase(); if(h<1||h>12) return NaN; if(p==="pm"&&h<12) h+=12; if(p==="am"&&h===12) h=0; }
+  if (mo<1||mo>12||d<1||d>31||h>23||mi>59||se>59) return NaN;
+  let t=Date.UTC(y,mo-1,d,h,mi,se);
+  const chk=new Date(t); if (chk.getUTCDate()!==d || chk.getUTCMonth()!==mo-1) return NaN;   // e.g. 2/30
+  if (tz && tz.toUpperCase()!=="Z"){ const m=/^([+-])(\d{2}):?(\d{2})$/.exec(tz); if(m) t -= (m[1]==="-"?-1:1)*(+m[2]*60+ +m[3])*60000; }
+  return t;
+}
+function parseDateTime(x){
+  if (x==null) return null;
+  if (typeof x==="number") return excelSerialMs(x);
+  const s=String(x).trim(); if (isBlank(s)) return null;
+  let m;
+  if (/^\d{8}$/.test(s)) return mkTime(s.slice(0,4),s.slice(4,6),s.slice(6,8));
+  if (/^\d+(\.\d+)?$/.test(s)) return excelSerialMs(Number(s));
+  const T="(?:[T ,]+(\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.\\d+)?)?\\s*(am|pm)?\\s*(Z|[+-]\\d{2}:?\\d{2})?)?$";
+  if ((m=new RegExp("^(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})"+T,"i").exec(s))) return mkTime(m[1],m[2],m[3],m[4],m[5],m[6],m[7],m[8]);
+  if ((m=new RegExp("^(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{2}|\\d{4})"+T,"i").exec(s))){
+    let a=+m[1], b=+m[2]; if (a>12 && b<=12){ const t=a; a=b; b=t; }      // unambiguous D/M
+    return mkTime(m[3],a,b,m[4],m[5],m[6],m[7],m[8]); }
+  if ((m=new RegExp("^(\\d{1,2})[- ]([a-z]{3})[a-z]*[- ,]+(\\d{2}|\\d{4})"+T,"i").exec(s)) && MONTHS[m[2].toLowerCase()])
+    return mkTime(m[3],MONTHS[m[2].toLowerCase()],m[1],m[4],m[5],m[6],m[7],m[8]);
+  if ((m=new RegExp("^([a-z]{3})[a-z]*\\.? (\\d{1,2}),? (\\d{4})"+T,"i").exec(s)) && MONTHS[m[1].toLowerCase()])
+    return mkTime(m[3],MONTHS[m[1].toLowerCase()],m[2],m[4],m[5],m[6],m[7],m[8]);
+  return NaN;
+}
+function excelSerialMs(v){            // Excel 1900 system; 18264 = 1950-01-01, 73051 = 2099-12-31
+  if (!Number.isFinite(v) || v<18264 || v>=73051) return NaN;
+  return Math.round((v-25569)*86400)*1000;
+}
+const ymOf = t => { const d=new Date(t); return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0"); };
+
+// ---- summary statistics ------------------------------------------------------
+function quantile(sorted, p){            // type 7 (R default)
+  const h=(sorted.length-1)*p, lo=Math.floor(h), hi=Math.ceil(h);
+  return sorted[lo] + (h-lo)*(sorted[hi]-sorted[lo]);
+}
+const r2 = x => x==null?null:Math.round(x*100)/100;
+const f1 = x => { const v=Math.round(x*10)/10; return String(v); };
+function contStats(vals){
+  const v=vals.slice().sort((a,b)=>a-b), n=v.length;
+  const mean=v.reduce((a,b)=>a+b,0)/n;
+  const sd=n>1?Math.sqrt(v.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(n-1)):null;
+  return {median:quantile(v,.5), q1:quantile(v,.25), q3:quantile(v,.75), mean, sd};
+}
+function contVar(label, vals, nTotal, extra){
+  const n=vals.length, o=Object.assign({label, type:"continuous", n, n_missing:nTotal-n}, extra||{});
+  if (n>=MIN_N_CONTINUOUS){ const s=contStats(vals);
+    Object.assign(o,{median:r2(s.median),q1:r2(s.q1),q3:r2(s.q3),mean:r2(s.mean),sd:r2(s.sd),suppressed:false,
+      text:f1(s.median)+" ["+f1(s.q1)+"–"+f1(s.q3)+"]; mean "+f1(s.mean)+" (SD "+(s.sd==null?"NA":f1(s.sd))+")"}); }
+  else Object.assign(o,{median:null,q1:null,q3:null,mean:null,sd:null,suppressed:"n < "+MIN_N_CONTINUOUS,text:"suppressed (n < "+MIN_N_CONTINUOUS+")"});
+  return o;
+}
+// counts {level:int} -> {level:{count,pct,text}} with primary + complementary suppression
+function suppressLevels(counts, n){
+  const keys=Object.keys(counts), out={};
+  const small=k=>counts[k]>=1&&counts[k]<=SUPPRESS_MAX;
+  const prim=keys.filter(small);
+  let comp=null;
+  if (prim.length===1){ const others=keys.filter(k=>!small(k)&&counts[k]>0).sort((a,b)=>counts[a]-counts[b]); comp=others[0]||null; }
+  for (const k of keys){ const c=counts[k];
+    if (small(k)) out[k]={count:"<"+(SUPPRESS_MAX+1),pct:null,text:"<"+(SUPPRESS_MAX+1)};
+    else if (k===comp) out[k]={count:"suppressed",pct:null,text:"suppressed"};
+    else { const pct=n?Math.round(c/n*1000)/10:null; out[k]={count:c,pct,text:c+" ("+(pct==null?"NA":pct.toFixed(1))+"%)"}; } }
+  return out;
+}
+const supCount = c => (c>=1&&c<=SUPPRESS_MAX) ? "<"+(SUPPRESS_MAX+1) : c;
+function catVar(label, type, levelOrder, codes, nTotal, extra){
+  const counts={}; levelOrder.forEach(l=>counts[l]=0);
+  let n=0; for (const c of codes){ if (c==null) continue; n++; counts[c]=(counts[c]||0)+1; }
+  return Object.assign({label, type, n, n_missing:nTotal-n, levels:suppressLevels(counts,n)}, extra||{});
+}
+const binVar = (label, codes, nTotal, extra) =>
+  catVar(label,"binary",["Yes","No"], codes.map(c=>c==null?null:(c?"Yes":"No")), nTotal, extra);
+
+// Numeric (non-coded) score variable after the SAME range checks runValidation uses;
+// out-of-range / non-numeric values are excluded (counted in n_invalid).
+function cleanSpecVal(sp, raw){
+  if (isBlank(raw)) return {v:null,bad:false};
+  const v = pnum(raw);
+  if (v==null) return {v:null,bad:false};
+  if (Number.isNaN(v)) return {v:null,bad:true};
+  if ((sp.min!=null&&v<sp.min)||(sp.max!=null&&v>sp.max)||(sp.type==="integer"&&v%1!==0)) return {v:null,bad:true};
+  return {v,bad:false};
+}
+
+// rows: objects keyed by original header (NOT mutated).
+// mapping: {canonical: header|null} for VARIABLE_SPEC and COHORT_SPEC names, plus optional
+//   value_maps:{var:{"<raw lower-case>": code | "__missing"}}, tici_scheme:"mtici"|"study05",
+//   coding_choices:{ambulatory_yes_means:"independent"|"dependent", smoking_yes_means:"current"|"ever"}.
+// Categorical/binary values go through resolveCoding (same table runValidation uses).
+function cohortSummary(rows, mapping){
+  mapping=mapping||{};
+  const N=rows.length, variables={}, notes=[];
+  const coding=resolveCoding(rows, mapping);
+  const col=nm=>mapping[nm]||null;
+  const raw=nm=>{ const c=col(nm); return rows.map(r=>c?r[c]:null); };
+  const spec=nm=>VARIABLE_SPEC.find(s=>s.name===nm);
+  const absent=(label,type)=>({label,type,mapped:false});
+  // coded variable -> {vals:[code|null], n_unassigned, n_folded}
+  function coded(nm){ const cv=coding.vars[nm]; let un=0, fo=0;
+    const vals=raw(nm).map(x=>{ const c=codeOf(cv,x); if(c===undefined){un++; return null;}
+      if(c!=null && cv.folded[ckey(x)]) fo++; return c; });
+    return {vals, n_unassigned:un, n_folded:fo}; }
+  function specVals(nm){ const sp=spec(nm), out=[]; let nBad=0;
+    for (const x of raw(nm)){ const c=cleanSpecVal(sp,x); if(c.bad) nBad++; out.push(c.v); }
+    return {vals:out, n_invalid:nBad}; }
+  const nn = a => a.filter(x=>x!=null);
+  const unNote=(nm,k)=>{ if(k) notes.push(nm+": "+k+" value(s) had no assigned code and are counted as missing."); };
+
+  // age
+  if (col("age")){ const s=specVals("age"); variables.age=contVar("Age, years",nn(s.vals),N,{n_invalid:s.n_invalid}); }
+  else variables.age=absent("Age, years","continuous");
+  // sex
+  if (col("sex")){ const s=coded("sex");
+    variables.sex=catVar("Sex","categorical",["Female","Male","Unknown"],s.vals,N,{n_unrecognized:s.n_unassigned}); unNote("sex",s.n_unassigned); }
+  else variables.sex=absent("Sex","categorical");
+  // race
+  const raceHint=new Array(N).fill(null);       // ethnicity implied by the race column, per patient (internal only)
+  if (col("race")){ let nHisp=0; const cv=coding.vars.race;
+    raw("race").forEach((x,i)=>{ const h=raceCode(x)[2]; raceHint[i]=h; if(h==="Hispanic or Latino") nHisp++; });
+    const s=coded("race");
+    const nDistFolded=Object.keys(cv.folded).filter(k=>cv.final[k]!=null).length;
+    variables.race=catVar("Race","categorical",RACE_LEVELS,s.vals,N,{n_unrecognized:s.n_unassigned,
+      folded_into_other:{patients:supCount(s.n_folded),distinct_values:nDistFolded}, hispanic_in_race_column:supCount(nHisp)});
+    unNote("race",s.n_unassigned);
+    if (nHisp) notes.push("race: "+supCount(nHisp)+" race value(s) said Hispanic/Latino; they are counted as ethnicity = Hispanic or Latino and, unless another race was also named, race = Unknown/declined."); }
+  else variables.race=absent("Race","categorical");
+  // ethnicity — always its own block; from the ethnicity column, with Hispanic/Latino
+  // values found in the race column filling blanks/unknowns; or derived from race alone.
+  if (col("ethnicity")){ let filled=0; const s=coded("ethnicity");
+    const codes=s.vals.map((c,i)=>{ if ((c==null||c==="Unknown") && raceHint[i]==="Hispanic or Latino"){ filled++; return "Hispanic or Latino"; } return c; });
+    variables.ethnicity=catVar("Ethnicity","categorical",ETH_LEVELS,codes,N,{derived_from:null,n_unrecognized:s.n_unassigned,
+      filled_from_race_column:supCount(filled)});
+    unNote("ethnicity",s.n_unassigned);
+    if (filled) notes.push("ethnicity: "+supCount(filled)+" blank/unknown ethnicity value(s) were set to Hispanic or Latino because the race column said so."); }
+  else if (col("race")){
+    const codes=raw("race").map((x,i)=> isBlank(x) ? null : (raceHint[i]||"Unknown"));
+    variables.ethnicity=catVar("Ethnicity","categorical",ETH_LEVELS,codes,N,{derived_from:"race column (no ethnicity column mapped)"});
+    notes.push("ethnicity: no ethnicity column was mapped, so ethnicity was derived from the race column (Hispanic/Latino or Non-Hispanic where stated, otherwise Unknown)."); }
+  else variables.ethnicity=absent("Ethnicity","categorical");
+  // NIHSS, pre-stroke mRS
+  if (col("nihss")){ const s=specVals("nihss"); variables.nihss=contVar("NIHSS at presentation",nn(s.vals),N,{n_invalid:s.n_invalid}); }
+  else variables.nihss=absent("NIHSS at presentation","continuous");
+  if (col("mrs_pre_stroke")){ const s=coded("mrs_pre_stroke");
+    const o=contVar("Pre-stroke mRS",nn(s.vals),N,{n_unrecognized:s.n_unassigned});
+    o.type="ordinal"; o.levels=catVar("","x",["0","1","2","3","4","5"],s.vals.map(x=>x==null?null:String(x)),N).levels;
+    variables.mrs_pre_stroke=o; unNote("mrs_pre_stroke",s.n_unassigned); }
+  else variables.mrs_pre_stroke=absent("Pre-stroke mRS","ordinal");
+  // binary score inputs + optional yes/no
+  for (const [nm,label] of [["pre_stroke_ambulatory_status","Pre-stroke non-ambulatory (1 = needs assistance / non-ambulatory)"],
+                            ["hx_cancer","History of cancer"],["hx_dm2","Diabetes"],
+                            ["prior_stroke","Prior stroke"],["iv_thrombolysis","IV thrombolysis"]]){
+    if (col(nm)){ const s=coded(nm); variables[nm]=binVar(label,s.vals,N,{n_unrecognized:s.n_unassigned}); unNote(nm,s.n_unassigned); }
+    else variables[nm]=absent(label,"binary"); }
+  if (col("hx_smoking")){ const s=coded("hx_smoking"), L={0:"Never",1:"Current",2:"Former"}, cv=coding.vars.hx_smoking;
+    variables.hx_smoking=catVar("Smoking (0 never / 1 current / 2 former)","categorical",["Never","Current","Former"],s.vals.map(x=>x==null?null:L[x]),N,
+      {n_unrecognized:s.n_unassigned, binary_column:!!cv.binary, yes_means:cv.choice.yes_or_1_means||null});
+    unNote("hx_smoking",s.n_unassigned); }
+  else variables.hx_smoking=absent("Smoking","categorical");
+  // LKN-to-puncture
+  { const label="LKN-to-puncture, minutes"; let src=null, mins=null, unparse=0, implaus=0;
+    if (col("lkn_to_puncture_min")){ src="precomputed column";
+      mins=raw("lkn_to_puncture_min").map(x=>{ const v=pnum(x); if(v==null) return null; if(Number.isNaN(v)){unparse++; return null;} return v; }); }
+    else if (col("lkn_datetime") && col("puncture_datetime")){ src="computed from LKN and puncture date/times";
+      const a=raw("lkn_datetime"), b=raw("puncture_datetime");
+      mins=a.map((x,i)=>{ const ta=parseDateTime(x), tb=parseDateTime(b[i]); if(ta==null||tb==null) return null;
+        if(Number.isNaN(ta)||Number.isNaN(tb)){unparse++; return null;} return (tb-ta)/60000; }); }
+    if (mins){ mins=mins.map(v=>{ if(v==null) return null; if(v<0||v>LKN_PUNCT_MAX_MIN){implaus++; return null;} return v; });
+      variables.lkn_to_puncture_min=contVar(label,nn(mins),N,{source:src,n_unparseable:unparse,n_implausible_dropped:implaus,
+        plausible_range_min:[0,LKN_PUNCT_MAX_MIN]});
+      if (implaus) notes.push("lkn_to_puncture_min: "+implaus+" value(s) < 0 or > "+LKN_PUNCT_MAX_MIN+" min were dropped as implausible.");
+      if (unparse) notes.push("lkn_to_puncture_min: "+unparse+" value(s) had an unreadable date/time or number and were treated as missing."); }
+    else variables.lkn_to_puncture_min=absent(label,"continuous"); }
+  // occlusion site
+  if (col("occlusion_site")){ const s=coded("occlusion_site");
+    variables.occlusion_site=catVar("Occlusion site","categorical",OCC_LEVELS,s.vals,N,{n_unrecognized:s.n_unassigned,folded_into_other:{patients:supCount(s.n_folded)}}); }
+  else variables.occlusion_site=absent("Occlusion site","categorical");
+  // procedure
+  if (col("number_of_passes")){ const s=specVals("number_of_passes"); variables.number_of_passes=contVar("Number of passes",nn(s.vals),N,{n_invalid:s.n_invalid}); }
+  else variables.number_of_passes=absent("Number of passes","continuous");
+  if (col("tici")){ const s=coded("tici");
+    variables.tici_ge_2b=binVar("mTICI ≥2b (≥3 on 0–5 scale)",s.vals.map(v=>v==null?null:v>=3),N,
+      {n_unrecognized:s.n_unassigned, tici_scheme:coding.tici.scheme}); unNote("tici",s.n_unassigned); }
+  else variables.tici_ge_2b=absent("mTICI ≥2b","binary");
+  // 90-day outcome (in-hospital death with missing mRS -> 6, as in scoring)
+  if (col("mrs_90day")){ const s=coded("mrs_90day"), died=col("mortality_hospital")?coded("mortality_hospital").vals:null;
+    let imputed=0; const m=s.vals.map((v,i)=>{ if(v==null&&died&&died[i]===1){imputed++; return 6;} return v; });
+    const ex={n_unrecognized:s.n_unassigned, death_imputed_as_6:supCount(imputed)};
+    variables.mrs_90day_0_2=binVar("90-day mRS 0–2",m.map(v=>v==null?null:v<=GOOD_CUTOFF),N,ex);
+    variables.mrs_90day_6=binVar("90-day mRS 6 (death)",m.map(v=>v==null?null:v===6),N,ex); unNote("mrs_90day",s.n_unassigned); }
+  else { variables.mrs_90day_0_2=absent("90-day mRS 0–2","binary"); variables.mrs_90day_6=absent("90-day mRS 6","binary"); }
+  // pre-operative score: runValidation's own scoring (same coding; rows are not mutated)
+  { const sc=RISK_SCORES.find(s=>s.key==="preop"), need=Object.keys(sc.points);
+    const lbl="Pre-operative score", lblT="Pre-operative score ≥"+sc.threshold_pts;
+    if (need.every(v=>col(v))){
+      const R=runValidation(rows, mapping, null);
+      const arr=R.score.scores.preop.scoreArr;
+      variables.preop_score=contVar(lbl,nn(arr),N);
+      variables.preop_score_ge_threshold=binVar(lblT,arr.map(s=>s==null?null:s>=sc.threshold_pts),N,{threshold_pts:sc.threshold_pts}); }
+    else { variables.preop_score=absent(lbl,"continuous"); variables.preop_score_ge_threshold=absent(lblT,"binary"); } }
+
+  // enrollment window (month resolution only)
+  let win={first_month:null,last_month:null,source:null};
+  const dsrc = col("procedure_date") ? "procedure_date" : (col("puncture_datetime") ? "puncture_datetime" : null);
+  if (dsrc){ let lo=Infinity, hi=-Infinity; const minT=Date.UTC(1990,0,1), maxT=Date.UTC(2100,0,1);
+    for (const x of raw(dsrc)){ const t=parseDateTime(x); if(t==null||Number.isNaN(t)||t<minT||t>=maxT) continue; if(t<lo) lo=t; if(t>hi) hi=t; }
+    if (lo<Infinity) win={first_month:ymOf(lo),last_month:ymOf(hi),source:dsrc}; }
+  return {n_patients:N, enrollment_window:win, suppression_rule:SUPPRESSION_RULE, variables, notes, coding:codingRecord(coding)};
+}
+// Wrap a cohortSummary() result as the cohort_summary/v1 file.
+function cohortSummaryExport(C, siteLabel, nowIso){
+  return Object.assign({schema:"cohort_summary/v1", tool:"stroke-score-validator",
+    exported_at:nowIso||new Date().toISOString(),
+    site_label:String(siteLabel||"").replace(/[\r\n,]/g," ").slice(0,80)}, C);
+}
 /* ===ENGINE END=== */
 if (typeof module!=="undefined" && module.exports)
-  module.exports = {VARIABLE_SPEC,RISK_SCORES,LOGIC_RULES,runValidation,suggestMap,parseDelimited,auc,pnum,scoreProb,recodeTici};
+  module.exports = {VARIABLE_SPEC,RISK_SCORES,LOGIC_RULES,runValidation,suggestMap,parseDelimited,auc,pnum,scoreProb,recodeTici,
+    COHORT_SPEC,suggestCohortMap,cohortSummary,cohortSummaryExport,parseDateTime,sexAuto,sexCode,raceCode,ethCode,occCode,yesNo,suppressLevels,SUPPRESSION_RULE,
+    detectTiciScheme,TICI_SCHEMES,CODED,resolveCoding,codeOf,codingRecord,MISSING_CODE};
 
 /* =========================================================================
    UI  (browser only)
@@ -435,22 +960,109 @@ if (typeof document!=="undefined") (function(){
   }
   function buildMapper(){
     const guess=suggestMap(DATA.headers);
+    const vmBox=nm=>CODED[nm]?"<div class='vmap' id='vm_"+nm+"'></div>":"";
     let html="";
-    VARIABLE_SPEC.forEach((v,k)=>{
+    VARIABLE_SPEC.forEach(v=>{
       const sel=guess[v.name];
       html+="<div class='maprow "+(sel?"guessed":"")+"' data-var='"+v.name+"'>"+
         "<div class='vlabel'>"+esc(v.name)+(v.required?"<span class='req'>required</span>":"")+
           "<br><small>"+esc(v.label)+"</small></div>"+
         "<div>"+colSelect("sel_"+v.name, sel, true)+"</div>"+
-        "<div class='sample' id='samp_"+v.name+"'>"+esc(sampleVals(sel))+"</div></div>";
+        "<div class='sample' id='samp_"+v.name+"'>"+esc(sampleVals(sel))+"</div></div>"+vmBox(v.name);
     });
     $("#maprows").innerHTML=html;
     $("#idcol").innerHTML="<option value=''>(row number)</option>"+DATA.headers.map(h=>"<option value='"+esc(h)+"'>"+esc(h)+"</option>").join("");
     VARIABLE_SPEC.forEach(v=>{ const s=$("#sel_"+v.name);
       s.addEventListener("change",()=>{ $("#samp_"+v.name).textContent=sampleVals(s.value);
-        s.closest(".maprow").classList.remove("guessed"); }); });
+        s.closest(".maprow").classList.remove("guessed"); buildValueMap(v.name,true); }); });
+    // optional cohort-characteristics variables
+    const cguess=suggestCohortMap(DATA.headers, Object.values(guess));
+    let ch="";
+    COHORT_SPEC.forEach(v=>{ const sel=cguess[v.name];
+      ch+="<div class='maprow "+(sel?"guessed":"")+"'>"+
+        "<div class='vlabel'>"+esc(v.name)+"<br><small>"+esc(v.label)+"</small></div>"+
+        "<div>"+colSelect("csel_"+v.name, sel, true)+"</div>"+
+        "<div class='sample' id='csamp_"+v.name+"'>"+esc(sampleVals(sel))+"</div></div>"+vmBox(v.name);
+    });
+    $("#cohortrows").innerHTML=ch;
+    COHORT_SPEC.forEach(v=>{ const s=$("#csel_"+v.name);
+      s.addEventListener("change",()=>{ $("#csamp_"+v.name).textContent=sampleVals(s.value);
+        s.closest(".maprow").classList.remove("guessed"); buildValueMap(v.name,true);
+        if(v.name==="race"||v.name==="ethnicity") updateEthHint(); }); });
+    Object.keys(CODED).forEach(nm=>buildValueMap(nm,false)); updateEthHint();
+    $("#runmsg").innerHTML="";
     $("#drop").classList.add("hidden"); $("#mapper").classList.remove("hidden");
     $("#results").innerHTML="";
+  }
+  // ---- value coding panel (one per categorical/binary variable) --------------
+  // Shows each distinct raw value and the code it will get. Auto-filled only where
+  // unambiguous; direction questions (ambulatory, binary smoking) and the TICI
+  // scheme are explicit. Engine: resolveCoding (same table used for scoring + exports).
+  const MAXV=25;
+  const attr=s=>esc(s).replace(/'/g,"&#39;");
+  function buildValueMap(nm, resetOverrides){
+    const box=$("#vm_"+nm); if(!box) return;
+    if(resetOverrides) box.innerHTML="";          // new column -> drop old per-value choices
+    const map=currentMapping(); if(!map[nm]){ box.innerHTML=""; return; }
+    const cv=resolveCoding(DATA.rows, map).vars[nm]; if(!cv){ box.innerHTML=""; return; }
+    const keys=Object.keys(cv.display); let h="";
+    const codeTxt=c=>{ if(c===undefined) return "<span class='err'>no code → missing</span>"; if(c===null) return "missing";
+      const L=cv.levels.find(l=>l[0]===c); return esc(L?L[1]:c); };
+    if(nm==="tici"){
+      const t=resolveCoding(DATA.rows,map).tici, cur=map.tici_scheme||"";
+      h+="<div><b>TICI coding:</b> <select class='vmq' data-q='tici_scheme' style='width:auto;display:inline-block;padding:2px'>"+
+        "<option value=''"+(cur?"":" selected")+">auto"+(t.detected?" — detected: "+esc(TICI_SCHEMES[t.detected]):" — could not decide")+"</option>"+
+        Object.keys(TICI_SCHEMES).map(s=>"<option value='"+s+"'"+(cur===s?" selected":"")+">"+esc(TICI_SCHEMES[s])+"</option>").join("")+
+        "</select> <span class='muted'>("+esc(t.detection_reason)+")</span></div><div>"+
+        keys.slice(0,MAXV).map(k=>"<span style='margin-right:12px;white-space:nowrap'><code>"+esc(cv.display[k])+"</code> → "+codeTxt(cv.final[k])+"</span>").join("")+"</div>";
+    } else {
+      if(nm==="pre_stroke_ambulatory_status" && (cv.choice.yes_or_1_means || cv.required.length || keys.some(k=>/^(y|yes|1|1\.0|true|t|n|no|0|0\.0|false|f)$/.test(k)&&CODED[nm].auto(cv.display[k])===undefined))){
+        const cur=(currentChoices().ambulatory_yes_means)||"";
+        h+="<div><b>In your column, does 1 / Yes mean</b> <select class='vmq' data-q='ambulatory_yes_means' style='width:auto;display:inline-block;padding:2px'>"+
+          [["","— choose (required) —"],["independent","independent / ambulatory"],["dependent","dependent / needs assistance"]].map(o=>"<option value='"+o[0]+"'"+(cur===o[0]?" selected":"")+">"+o[1]+"</option>").join("")+
+          "</select> <span class='muted'>The study codes 1 = needs assistance / non-ambulatory.</span></div>"; }
+      if(nm==="hx_smoking" && cv.binary){
+        const cur=(currentChoices().smoking_yes_means)||"";
+        h+="<div class='note'>"+esc(SMOKING_BINARY_WARNING)+"</div>";
+        if(cv.required.length || cv.choice.yes_or_1_means)
+          h+="<div><b>Does “yes” / 1 mean</b> <select class='vmq' data-q='smoking_yes_means' style='width:auto;display:inline-block;padding:2px'>"+
+            [["","— choose (required) —"],["current","current smoker"],["ever","ever smoker (current or former)"]].map(o=>"<option value='"+o[0]+"'"+(cur===o[0]?" selected":"")+">"+o[1]+"</option>").join("")+"</select></div>"; }
+      h+="<div>"+keys.slice(0,MAXV).map(k=>{ const f=cv.final[k], a=cv.auto[k];
+        const val = f===undefined?"":(f===null?MISSING_CODE:String(f));
+        const opts=[["","— no code (missing) —"]].concat(cv.levels.map(l=>[String(l[0]),l[1]])).concat([[MISSING_CODE,"treat as missing"]]);
+        return "<label style='margin-right:12px;white-space:nowrap'><code>"+esc(cv.display[k])+"</code> → <select class='vmsel' data-var='"+nm+"' data-k='"+attr(k)+
+          "' data-auto='"+attr(a===undefined?"":(a===null?MISSING_CODE:String(a)))+"' style='width:auto;display:inline-block;padding:2px"+(f===undefined?";border-color:var(--red)":"")+"'>"+
+          opts.map(o=>"<option value='"+attr(o[0])+"'"+(o[0]===val?" selected":"")+">"+esc(o[1])+"</option>").join("")+"</select></label>"; }).join("")+"</div>";
+    }
+    if(keys.length>MAXV) h+="<div class='note'>"+keys.length+" distinct values; showing the first "+MAXV+". Values without a code count as missing.</div>";
+    cv.warnings.filter(w=>w!==SMOKING_BINARY_WARNING).forEach(w=>h+="<div class='note'>"+esc(w)+"</div>");
+    cv.required.forEach(w=>h+="<div class='err'>"+esc(w)+"</div>");
+    box.innerHTML=h;
+    box.querySelectorAll("select").forEach(s=>s.addEventListener("change",()=>buildValueMap(nm,false)));
+  }
+  function currentChoices(){ const c={};
+    document.querySelectorAll(".vmq").forEach(s=>{ if(s.value) c[s.getAttribute("data-q")]=s.value; }); return c; }
+  // Hispanic/Latino written in the race column is always captured as ethnicity.
+  function updateEthHint(){
+    const box=$("#ethhint"); if(!box) return;
+    const rc=$("#csel_race").value, ec=$("#csel_ethnicity").value;
+    let k=0; if(rc) for(const r of DATA.rows){ const h=raceCode(r[rc])[2]; if(h==="Hispanic or Latino") k++; }
+    if(!rc){ box.textContent=""; return; }
+    if(!ec) box.textContent="No ethnicity column selected: ethnicity will be derived from the race column"+
+      (k?" ("+k+" race value(s) say Hispanic/Latino; those count as ethnicity = Hispanic or Latino and race = Unknown/declined unless another race is named).":
+         " (Hispanic / Non-Hispanic where stated, otherwise Unknown).");
+    else box.textContent=k?k+" race value(s) say Hispanic/Latino: they will fill in ethnicity where the ethnicity column is blank or unknown, and race becomes Unknown/declined unless another race is named.":"";
+  }
+  function currentMapping(){
+    const map={}; VARIABLE_SPEC.forEach(v=>{ map[v.name]=$("#sel_"+v.name).value||null; });
+    COHORT_SPEC.forEach(v=>{ map[v.name]=$("#csel_"+v.name).value||null; });
+    // only entries the user changed away from the automatic code count as overrides
+    const vm={}; document.querySelectorAll(".vmsel").forEach(s=>{ const nm=s.getAttribute("data-var");
+      if(s.value!==s.getAttribute("data-auto")){ (vm[nm]=vm[nm]||{})[s.getAttribute("data-k")]=s.value||MISSING_CODE; } });
+    map.value_maps=vm;
+    const ch=currentChoices(); map.tici_scheme=ch.tici_scheme||null; delete ch.tici_scheme;
+    map.coding_choices=ch;
+    return map;
   }
 
   // ---- render results (report) ---------------------------------------------
@@ -505,8 +1117,9 @@ if (typeof document!=="undefined") (function(){
   }
   // De-identified researcher export (BOTH scores). score+prediction+outcome per row,
   // NO row_id / NO inputs, plus per-score summary metrics. Contains no PHI.
+  // v3 = v2 fields unchanged + cohort_summary (the same aggregate-only object as cohort_summary.json).
   function exportResearcher(R, siteLabel){
-    const out={ tool:"stroke-score-validator", schema:"validation_export/v2",
+    const out={ tool:"stroke-score-validator", schema:"validation_export/v3",
       exported_at:new Date().toISOString(),
       site_label:String(siteLabel||"").replace(/[\r\n,]/g," ").slice(0,80),
       scores:{}, rows:[] };
@@ -523,9 +1136,37 @@ if (typeof document!=="undefined") (function(){
       peri_score:r.peri_score, peri_pred:r.peri_pred,
       preop_score:r.preop_score, preop_pred:r.preop_pred,
       observed:(r.observed===""?null:r.observed) }));   // "poor"/"good"/null
-    const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
+    out.coding=R.coding;      // raw value -> code table per variable, TICI scheme, choices (no counts)
+    if (R.cohort) out.cohort_summary=cohortSummaryExport(R.cohort, siteLabel, out.exported_at);
+    downloadJson("validation_export.json", out);
+  }
+  function downloadJson(name, obj){
+    const blob=new Blob([JSON.stringify(obj,null,2)],{type:"application/json"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-    a.download="validation_export.json"; a.click(); URL.revokeObjectURL(a.href);
+    a.download=name; a.click(); URL.revokeObjectURL(a.href);
+  }
+  // Value-coding audit (the same record both exports carry)
+  function codingHtml(K){
+    let h="";
+    if(K.tici) h+="<p><b>TICI coding:</b> "+esc(K.tici.scheme_label||"not chosen")+" <span class='muted'>("+esc(K.tici.source)+"; "+esc(K.tici.detection_reason)+")</span></p>";
+    h+="<div class='scroll'><table><thead><tr><th>variable</th><th>your value → code</th><th>notes</th></tr></thead><tbody>";
+    for(const nm in K.variables){ const v=K.variables[nm];
+      const tab=v.table.map(r=>"<code>"+esc(r.raw)+"</code> → "+esc(r.code==null?"missing":r.code)+(r.how==="auto"?"":" <small class='muted'>("+esc(r.how)+")</small>")).join(", ")+(v.table_truncated?" …":"");
+      const notes=[].concat(v.choice&&v.choice.yes_or_1_means?["yes / 1 means: "+v.choice.yes_or_1_means]:[], v.warnings||[]);
+      h+="<tr><td>"+esc(nm)+"</td><td>"+tab+"</td><td>"+notes.map(esc).join("<br>")+"</td></tr>"; }
+    return h+"</tbody></table></div>";
+  }
+  // Cohort-characteristics table (shows exactly what is exported, i.e. after suppression)
+  function cohortTable(C){
+    let h="<div class='scroll'><table><thead><tr><th>Characteristic</th><th>n</th><th>missing</th><th>summary</th></tr></thead><tbody>";
+    for (const k in C.variables){ const v=C.variables[k];
+      if (v.mapped===false){ h+="<tr class='mut'><td>"+esc(v.label)+"</td><td></td><td></td><td>not mapped</td></tr>"; continue; }
+      const top=v.type==="continuous"||v.type==="ordinal" ? v.text : (v.type==="binary" ? "Yes: "+v.levels.Yes.text : "");
+      h+="<tr><td><b>"+esc(v.label)+"</b>"+(v.derived_from?" <small class='muted'>("+esc(v.derived_from)+")</small>":"")+"</td><td>"+v.n+"</td><td>"+v.n_missing+"</td><td>"+esc(top)+"</td></tr>";
+      if (v.levels && v.type!=="binary") for (const L in v.levels)
+        h+="<tr><td style='padding-left:26px'>"+esc(L)+"</td><td></td><td></td><td>"+esc(v.levels[L].text)+"</td></tr>";
+    }
+    return h+"</tbody></table></div>";
   }
 
   let LAST=null;
@@ -566,8 +1207,8 @@ if (typeof document!=="undefined") (function(){
         " &nbsp;|&nbsp; "+ev.scorable+" scored, "+ev.excluded_missing+" excluded for missing inputs.</p>"+perf;
     }
 
-    const titles={missing:"Missing values (not permitted)",type:"Type / coercion errors",range:"Out-of-range values",allowed:"Disallowed category / code",logic:"Arithmetic / cross-field logic violations"};
-    let sections=""; for(const ck of ["missing","type","range","allowed","logic"]){ const sub=excByCheck(ck);
+    const titles={missing:"Missing values (not permitted)",type:"Type / coercion errors",range:"Out-of-range values",allowed:"Disallowed category / code",logic:"Arithmetic / cross-field logic violations",coding:"Values with no assigned code (treated as missing)"};
+    let sections=""; for(const ck of ["missing","type","range","allowed","coding","logic"]){ const sub=excByCheck(ck);
       if(!sub.length) continue; sections+="<h2>"+titles[ck]+" <span class='badge'>"+sub.length+"</span></h2>"+
         table(sub.map(e=>({row_id:e.row_id,row_num:e.row_num,variable:e.variable,value:e.value,expected:e.expected})),["row_id","row_num","variable","value","expected"]); }
     if(!sections) sections="<p class='ok big'>No exceptions found. ✓</p>";
@@ -591,15 +1232,27 @@ if (typeof document!=="undefined") (function(){
       "<div class='toolbar'>"+
        "<input id='siteLabel' placeholder='site label (optional, no PHI)' style='padding:6px 8px;border:1px solid #ccc;border-radius:6px'>"+
        "<button class='pri' id='dlResearch'>⬇ Researcher export (de-identified)</button>"+
+       "<button class='pri' id='dlCohort'>⬇ Cohort summary (aggregate only)</button>"+
        "<button class='sec' id='dlExc'>Download exceptions.csv</button>"+
        "<button class='sec' id='dlScore'>Download scored_data.csv</button></div>"+
+      "<p class='muted' style='font-size:12px;margin-top:-6px'>The researcher export also contains the cohort summary below, so one file is enough. "+
+       "<code>cohort_summary.json</code> holds only the aggregate table.</p>"+
       scoreHtml+
+      "<h2>Cohort characteristics</h2>"+
+      "<p class='muted'>Aggregates only — this table is exactly what the exports contain. "+R.cohort.n_patients+" patients"+
+        (R.cohort.enrollment_window.first_month?"; enrollment "+esc(R.cohort.enrollment_window.first_month)+" to "+esc(R.cohort.enrollment_window.last_month)+" (from "+esc(R.cohort.enrollment_window.source)+")":"")+
+        ". Continuous: median [Q1–Q3]; mean (SD). Categorical: n (% of non-missing). <b>Counts of 1–10 are shown as &lt;11</b>; when only one level is "+
+        "hidden, the next-smallest is also hidden (“suppressed”) so it can't be worked out from n. Continuous summaries need n ≥ 11.</p>"+
+      (R.cohort.notes.length?"<p class='note'>"+R.cohort.notes.map(esc).join("<br>")+"</p>":"")+
+      cohortTable(R.cohort)+
+      "<h2>Value coding</h2><p class='muted'>How each distinct value in your columns was coded. This table (without any counts) is included in both exports so the coding can be audited.</p>"+codingHtml(R.coding)+
       "<h2>Variable summary</h2>"+vsHtml+
       "<h2>Arithmetic / logic rules</h2>"+rlHtml+
       sections;
     $("#dlExc").onclick=()=>download("exceptions.csv",R.exceptions,["row_id","row_num","check","variable","value","expected"]);
     $("#dlScore").onclick=()=>download("scored_data.csv",R.score.scored,["row_id","peri_score","peri_pred","preop_score","preop_pred","observed"]);
     $("#dlResearch").onclick=()=>exportResearcher(R, $("#siteLabel")?$("#siteLabel").value:"");
+    $("#dlCohort").onclick=()=>downloadJson("cohort_summary.json", cohortSummaryExport(R.cohort, $("#siteLabel")?$("#siteLabel").value:""));
     $("#results").scrollIntoView({behavior:"smooth"});
   }
 
@@ -612,8 +1265,16 @@ if (typeof document!=="undefined") (function(){
   drop.addEventListener("drop",e=>{ if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
   $("#reset").onclick=()=>{ DATA=null; $("#mapper").classList.add("hidden"); $("#drop").classList.remove("hidden");
     $("#results").innerHTML=""; $("#loadmsg").textContent=""; $("#file").value=""; };
-  $("#run").onclick=()=>{ const map={}; VARIABLE_SPEC.forEach(v=>{ const s=$("#sel_"+v.name).value; map[v.name]=s||null; });
-    const idcol=$("#idcol").value||null; renderResults(runValidation(DATA.rows,map,idcol)); };
+  $("#run").onclick=()=>{ const cmap=currentMapping();
+    const idcol=$("#idcol").value||null;
+    // explicit coding questions (TICI scheme, ambulatory direction, binary smoking) must be answered
+    const cd=resolveCoding(DATA.rows,cmap), req=[];
+    for(const nm in cd.vars) cd.vars[nm].required.forEach(w=>req.push(nm+": "+w));
+    if(req.length){ $("#runmsg").innerHTML="<div class='banner bad'>Please answer before scoring:<br>"+req.map(esc).join("<br>")+"</div>"; return; }
+    $("#runmsg").innerHTML="";
+    const R=runValidation(DATA.rows,cmap,idcol);        // does not modify DATA.rows
+    R.cohort=cohortSummary(DATA.rows,cmap);
+    renderResults(R); };
 })();
 </script>
 </body>
