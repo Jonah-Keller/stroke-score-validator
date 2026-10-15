@@ -6,3 +6,5 @@ column_map.csv
 .DS_Store
 *.Rproj
 .Rhistory
+tests/node_modules/
+tests/package-lock.json

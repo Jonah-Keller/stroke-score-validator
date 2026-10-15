@@ -1,0 +1,21 @@
+{
+  "file": "minimal.csv",
+  "synthetic": true,
+  "mapping": {
+    "nihss": "NIHSS",
+    "hx_cancer": "cancer",
+    "mrs_90day": "mRS90"
+  },
+  "user_actions": {
+    "choices": {}
+  },
+  "prompts": [],
+  "tici_scheme": null,
+  "checks": {
+    "n_patients": 80,
+    "nihss_median": 14.0,
+    "mrs90_n": 80,
+    "mrs90_0_2": 26,
+    "mrs90_6": 6
+  }
+}

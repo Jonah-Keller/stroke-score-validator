@@ -1,0 +1,57 @@
+{
+  "file": "excel_serials.xlsx",
+  "synthetic": true,
+  "mapping": {
+    "age": "Patient age",
+    "nihss": "NIH Stroke Scale",
+    "tici": "eTICI",
+    "number_of_passes": "Passes",
+    "hx_cancer": "Active cancer",
+    "hx_dm2": "Diabetes mellitus",
+    "mrs_pre_stroke": "Baseline mRS",
+    "hx_smoking": "Smoking status",
+    "mrs_90day": "mRS at 90 days",
+    "sex": "Sex",
+    "lkn_datetime": "Last known well",
+    "puncture_datetime": "Arterial puncture",
+    "occlusion_site": "Occluded vessel",
+    "iv_thrombolysis": "IV alteplase",
+    "mortality_hospital": "Discharge status"
+  },
+  "user_actions": {
+    "choices": {},
+    "sheet": "Data"
+  },
+  "prompts": [],
+  "tici_scheme": "mtici",
+  "checks": {
+    "n_patients": 80,
+    "nihss_median": 14.0,
+    "age_median": 71.0,
+    "age_n": 80,
+    "mrs90_n": 80,
+    "mrs90_0_2": 30,
+    "mrs90_6": 4,
+    "tici_n": 80,
+    "tici_ge_2b": 61,
+    "female": 39,
+    "ivt_yes": 24,
+    "occ_m1": 41,
+    "smoke_never": 44,
+    "smoke_current": 13,
+    "smoke_former": 23,
+    "l2p_median": 331.0,
+    "l2p_implausible": 0,
+    "peri_n_scored": 80
+  },
+  "must_not_map": [
+    "MRN",
+    "Location",
+    "Time",
+    "Notes"
+  ],
+  "sheets": [
+    "Instructions",
+    "Data"
+  ]
+}

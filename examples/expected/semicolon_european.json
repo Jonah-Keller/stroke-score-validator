@@ -1,0 +1,46 @@
+{
+  "file": "semicolon_european.csv",
+  "synthetic": true,
+  "mapping": {
+    "age": "age_years",
+    "nihss": "NIHSS",
+    "tici": "TICI",
+    "number_of_passes": "passes",
+    "hx_cancer": "cancer",
+    "hx_dm2": "diabetes",
+    "mrs_pre_stroke": "premorbid mRS",
+    "hx_smoking": "smoking",
+    "mrs_90day": "mRS 90 days",
+    "sex": "sex",
+    "procedure_date": "thrombectomy date",
+    "lkn_to_puncture_min": "LKN to puncture (min)"
+  },
+  "user_actions": {
+    "choices": {}
+  },
+  "prompts": [],
+  "tici_scheme": "mtici",
+  "checks": {
+    "n_patients": 80,
+    "nihss_median": 14.0,
+    "age_median": 67.5,
+    "age_n": 80,
+    "mrs90_n": 80,
+    "mrs90_0_2": 29,
+    "mrs90_6": 6,
+    "tici_n": 80,
+    "tici_ge_2b": 56,
+    "female": 38,
+    "smoke_never": 51,
+    "smoke_current": 10,
+    "smoke_former": 19,
+    "l2p_median": 291.5,
+    "l2p_implausible": 0,
+    "first_month": "2021-03",
+    "last_month": "2024-08",
+    "peri_n_scored": 80
+  },
+  "date_order": {
+    "procedure_date": "DM"
+  }
+}

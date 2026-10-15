@@ -57,8 +57,10 @@
   <div class="big">Drop a .csv / .tsv / .xlsx / .xls file here</div>
   <div class="muted" style="margin-top:6px">or <b>click to choose a file</b></div>
   <input id="file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" class="hidden">
+  <div class="muted" style="margin-top:4px;font-size:12px">Old-format .xls files can't be read here — save them as .xlsx or .csv first.</div>
 </div>
 <div id="loadmsg" class="note" style="margin-top:8px"></div>
+<div id="sheetbar" style="margin-top:6px"></div>
 
 <div id="mapper" class="hidden">
   <h2>Match your columns</h2>
@@ -81,6 +83,9 @@
   <div class="toolbar">
     <button id="run">Validate &amp; Score</button>
     <button id="reset" class="sec">Start over</button>
+    <button id="saveMap" class="sec" title="Column choices, value codes and answers only — no patient data">Save mapping</button>
+    <button id="loadMap" class="sec" title="Re-use a mapping saved earlier">Load mapping…</button>
+    <input id="loadMapFile" type="file" accept=".json" class="hidden">
   </div>
   <div id="runmsg"></div>
 </div>
@@ -178,7 +183,8 @@ function pnum(x){
   if (x==null) return null;
   const s = String(x).trim();
   if (s===""||/^(na|n\/a|\.)$/i.test(s)) return null;
-  const v = Number(s.replace(/,/g,""));
+  // "214,5" / "0,75" = decimal comma (European export); "1,234" = thousands separator
+  const v = /^-?\d+,\d{1,2}$/.test(s) ? Number(s.replace(",",".")) : Number(s.replace(/,/g,""));
   return Number.isNaN(v) ? NaN : v;
 }
 
@@ -195,7 +201,7 @@ const SYN = {
   hx_cancer:["hxcancer","cancer","malignancy","cancerhistory","cancerhx"],
   hx_blood_thinners:["bloodthinners","anticoagulation","anticoagulant","antiplatelet","hxbloodthinners","doac"],
   hx_smoking:["smoking","smoker","hxsmoking","tobacco"],
-  mrs_pre_stroke:["mrsprestroke","baselinemrs","premrs","prestrokemrs"],
+  mrs_pre_stroke:["mrsprestroke","baselinemrs","premrs","prestrokemrs","premorbidmrs","mrspremorbid","premorbid","priormrs","mrsprior","mrsbaseline","historicalmrs"],
   nihss:["nihss","nih","nihssbaseline","nihstroke","strokeseverity","admissionnihss"],
   time_since_lkn_min:["timesincelkn","lkn","lastknownnormal","lkntime","timelkn","onsettotime"],
   tici:["tici","mtici","ticiscore","ticigrade","reperfusion","recanalization"],
@@ -228,7 +234,9 @@ function scoreMatch(colNorm, v){
   if (syns.includes(colNorm)) return 0.96;
   let best = 0;
   for (const s of [vn,...syns]){
-    if (colNorm.includes(s)||s.includes(colNorm)){
+    // a header containing a synonym ("Admission NIHSS" ⊃ "nihss") is a match; a SHORT header that is only
+    // part of a long synonym ("Time" ⊂ "timetopuncture", "Location" ⊂ "occlusionlocation") is not
+    if (colNorm.includes(s) || (s.includes(colNorm) && colNorm.length>=4 && colNorm.length/s.length>=0.75)){
       const r = Math.min(colNorm.length,s.length)/Math.max(colNorm.length,s.length);
       best = Math.max(best, 0.75+0.2*r);
     }
@@ -372,7 +380,9 @@ function runValidation(rows, map, idCol){
 function parseDelimited(text){
   text = text.replace(/^﻿/,"");
   const firstLine = text.slice(0, text.indexOf("\n")<0?text.length:text.indexOf("\n"));
-  const delim = (firstLine.split("\t").length > firstLine.split(",").length) ? "\t" : ",";
+  // delimiter = whichever of tab / semicolon / comma splits the header line most (outside quotes)
+  const outside=firstLine.replace(/"[^"]*"/g,"");
+  const delim = ["\t",";",","].map(d=>[d,outside.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
   const rows=[]; let field="",row=[],inq=false;
   for(let i=0;i<text.length;i++){ const c=text[i];
     if(inq){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inq=false; } else field+=c; }
@@ -382,11 +392,26 @@ function parseDelimited(text){
       else if(c==="\r"){ /* skip */ }
       else field+=c; } }
   if(field!==""||row.length){ row.push(field); rows.push(row); }
-  const nonEmpty=rows.filter(r=>r.some(x=>String(x).trim()!==""));
-  if(!nonEmpty.length) return {headers:[],rows:[]};
-  const headers=nonEmpty[0].map(h=>String(h).trim());
+  return tableFromGrid(rows);
+}
+// grid (array of row arrays) -> {headers, rows, warnings}. Blank header cells become "Column N";
+// duplicate names become "Age (2)" so no column silently overwrites another.
+function tableFromGrid(grid){
+  const nonEmpty=grid.filter(r=>r&&r.some(x=>x!=null&&String(x).trim()!==""));
+  if(!nonEmpty.length) return {headers:[],rows:[],warnings:[]};
+  const width=Math.max(...nonEmpty.map(r=>r.length));
+  const raw=Array.from({length:width},(_,j)=>{ const h=nonEmpty[0][j]; return h==null?"":String(h).trim(); });
+  const warnings=[], seen={}, dups=new Set();
+  const headers=raw.map((h,j)=>{ let n=h||("Column "+(j+1));
+    if(seen[n]){ dups.add(n); let k=2; while(seen[n+" ("+k+")"]) k++; n=n+" ("+k+")"; }
+    seen[n]=true; return n; });
+  if(dups.size) warnings.push("Duplicate column name(s): "+[...dups].join(", ")+". They are listed as “Name (2)” etc. — check you pick the right one.");
+  const filled=raw.filter(h=>h!=="");
+  const datalike=filled.filter(h=>{ const v=pnum(h); return (v!=null&&!Number.isNaN(v)) || /^\d{1,4}[-\/.]\d{1,2}[-\/.]\d{1,4}/.test(h) || /^2[abc]$/i.test(h); }).length;
+  if(filled.length && datalike/filled.length>=0.5)
+    warnings.push("The first row looks like data, not column names. Add a header row with column names and reload; otherwise the first patient is used as the header.");
   const data=nonEmpty.slice(1).map(r=>{const o={}; headers.forEach((h,j)=>o[h]=r[j]==null?"":r[j]); return o;});
-  return {headers,rows:data};
+  return {headers,rows:data,warnings};
 }
 
 /* ---- cohort characteristics: AGGREGATE-ONLY summary (pure) ------------------
@@ -457,6 +482,7 @@ const HISP_RE=/hispanic|latin[oax]|latine|\bhisp\b/;
 const NONHISP_RE=/(non|not)[ -]?(hispanic|latin[oax]?|latine|hisp\b)/;
 function raceCode(raw){
   if (isBlank(raw)) return [null,false,null]; const s=ckey(raw);
+  if (/^\d+(\.0+)?$/.test(s)) return [undefined,false,null];      // numeric codes (e.g. REDCap 1-6): must be coded by the user
   if (NONHISP_RE.test(s)){
     const rest=s.replace(new RegExp(NONHISP_RE.source,"g")," ").replace(/\b(or|and)\b|[,;:/()\-]+/g," ").trim();
     const r = rest ? raceBase(rest) : ["Unknown/declined",false];
@@ -497,6 +523,7 @@ function yesNo(raw){
 // occlusion site: returns [level, foldedIntoOther]  (most proximal wins for tandem/multiple)
 function occCode(raw){
   if (isBlank(raw)) return [null,false]; const s=ckey(raw);
+  if (/^\d+(\.0+)?$/.test(s)) return [undefined,false];            // numeric codes: must be coded by the user
   if (UNK_RE.test(s)) return [null,false];
   const w = "(^|[^a-z0-9])";
   if (new RegExp(w+"[lrt]?-?ica([^a-z]|$)").test(s) || /carotid/.test(s)) return ["ICA",false];   // L ICA, T-ICA, tICA, ICA-T; not PICA
@@ -597,7 +624,8 @@ function resolveCoding(rows, map){
         v.warnings.push("Bare \"2\" values cannot be placed as 2a/2b/2c and are treated as missing.");
       out.vars[name]=v; continue; }
     const ctx={has2:keys.some(k=>/^2(\.0+)?$/.test(k))};
-    for (const [k,d] of distinct){ v.auto[k]=C.auto(d,ctx); if (C.folded&&C.folded(d)) v.folded[k]=true; }
+    for (const [k,d] of distinct){ v.auto[k]=C.auto(d,ctx); if (C.folded&&C.folded(d)) v.folded[k]=true;
+      if (v.auto[k]===undefined && (UNK_RE.test(k)||/^(n\/?a|none recorded|not done|missing)$/.test(k))) v.auto[k]=null; }   // "unknown", "UNK", "N/A" = missing
     let dirKeys=[];
     if (name==="pre_stroke_ambulatory_status"){
       dirKeys=keys.filter(k=>v.auto[k]===undefined&&(isYesTok(k)||isNoTok(k)));
@@ -623,14 +651,29 @@ function resolveCoding(rows, map){
       if (name==="pre_stroke_ambulatory_status") v.required.push("Your ambulatory column uses 0/1 or yes/no. Say whether 1 / Yes means independent or dependent (the study codes 1 = needs assistance / non-ambulatory).");
       else v.required.push("Your smoking column has only two values. Say whether \"yes\" / 1 means current smoker or ever smoker."); }
     out.vars[name]=v; }
+  // date columns: M/D vs D/M decided per column; asked when the column can't tell
+  const dor=map.date_orders||{};
+  for (const name of DATE_VARS){ const col=map[name]; if(!col) continue;
+    const det=detectDateOrder(rows.map(r=>r[col]));
+    const pick=(dor[name]==="MD"||dor[name]==="DM")?dor[name]:null;
+    const order=pick||det.order;
+    const v={name, kind:"date", order, detected:det.order, reason:det.reason, n_slash:det.n_slash,
+      source: !det.n_slash ? "not needed" : pick ? (pick===det.order?"auto-detected (confirmed by user)":"user choice") : (det.order?"auto-detected":"unresolved"),
+      required:[], warnings:[]};
+    if (det.n_slash && !order) v.required.push("Say whether the dates in this column are M/D/YYYY (US) or D/M/YYYY: "+det.reason+".");
+    out.vars[name]=v; }
   return out;
 }
+const DATE_VARS=["lkn_datetime","puncture_datetime","procedure_date"];
+const DATE_ORDERS={MD:"M/D/YYYY (US)", DM:"D/M/YYYY"};
 // code for one raw cell: number/string code, null = missing, undefined = no code assigned
 function codeOf(cv, raw){ if (isBlank(raw)) return null; return cv.final[ckey(raw)]; }
 // Audit record for the exports: the raw -> code table (no counts), choices and warnings.
 function codingRecord(coding){
   const o={tici:coding.tici, variables:{}};
-  for (const name in coding.vars){ const v=coding.vars[name], keys=Object.keys(v.display);
+  for (const name in coding.vars){ const v=coding.vars[name];
+    if (v.kind==="date"){ o.variables[name]={date_order:v.order?DATE_ORDERS[v.order]:null, source:v.source, reason:v.reason, unresolved:v.required}; continue; }
+    const keys=Object.keys(v.display);
     o.variables[name]={
       table:keys.slice(0,40).map(k=>({raw:String(v.display[k]).slice(0,40), code:(v.final[k]===undefined?null:v.final[k]),
         how: v.final[k]===undefined ? "no code (missing)" : v.final[k]===null ? "set to missing" : v.overridden[k] ? "set by user" : (v.folded[k]?"auto (unrecognised -> Other)":"auto")})),
@@ -654,7 +697,9 @@ function mkTime(y,mo,d,h,mi,se,ampm,tz){
   if (tz && tz.toUpperCase()!=="Z"){ const m=/^([+-])(\d{2}):?(\d{2})$/.exec(tz); if(m) t -= (m[1]==="-"?-1:1)*(+m[2]*60+ +m[3])*60000; }
   return t;
 }
-function parseDateTime(x){
+// order: "MD" (US M/D/YYYY) | "DM" (D/M/YYYY) for slash/dot dates; decided per COLUMN by
+// detectDateOrder. Without an order, a value is read as D/M only when its first part > 12.
+function parseDateTime(x, order){
   if (x==null) return null;
   if (typeof x==="number") return excelSerialMs(x);
   const s=String(x).trim(); if (isBlank(s)) return null;
@@ -664,13 +709,27 @@ function parseDateTime(x){
   const T="(?:[T ,]+(\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.\\d+)?)?\\s*(am|pm)?\\s*(Z|[+-]\\d{2}:?\\d{2})?)?$";
   if ((m=new RegExp("^(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})"+T,"i").exec(s))) return mkTime(m[1],m[2],m[3],m[4],m[5],m[6],m[7],m[8]);
   if ((m=new RegExp("^(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{2}|\\d{4})"+T,"i").exec(s))){
-    let a=+m[1], b=+m[2]; if (a>12 && b<=12){ const t=a; a=b; b=t; }      // unambiguous D/M
+    let a=+m[1], b=+m[2];
+    if (order==="DM" || (!order && a>12 && b<=12)){ const t=a; a=b; b=t; }
     return mkTime(m[3],a,b,m[4],m[5],m[6],m[7],m[8]); }
   if ((m=new RegExp("^(\\d{1,2})[- ]([a-z]{3})[a-z]*[- ,]+(\\d{2}|\\d{4})"+T,"i").exec(s)) && MONTHS[m[2].toLowerCase()])
     return mkTime(m[3],MONTHS[m[2].toLowerCase()],m[1],m[4],m[5],m[6],m[7],m[8]);
   if ((m=new RegExp("^([a-z]{3})[a-z]*\\.? (\\d{1,2}),? (\\d{4})"+T,"i").exec(s)) && MONTHS[m[1].toLowerCase()])
     return mkTime(m[3],MONTHS[m[1].toLowerCase()],m[2],m[4],m[5],m[6],m[7],m[8]);
   return NaN;
+}
+const SLASH_DATE_RE=/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})(\D|$)/;
+// Per-column date order for d/d/yyyy text. Returns {order:"MD"|"DM"|null, reason, n_slash}.
+// null with n_slash > 0 = genuinely ambiguous (no part > 12) or contradictory -> ask the user.
+function detectDateOrder(values){
+  let n=0, firstBig=false, secondBig=false;
+  for (const x of values){ if (x==null) continue; const m=SLASH_DATE_RE.exec(String(x).trim()); if(!m) continue; n++;
+    if (+m[1]>12) firstBig=true; if (+m[2]>12) secondBig=true; }
+  if (!n) return {order:null, reason:"no d/m/y-style text dates", n_slash:0};
+  if (firstBig && secondBig) return {order:null, reason:"some dates only make sense as D/M and others only as M/D", n_slash:n};
+  if (firstBig) return {order:"DM", reason:"a first number above 12 appears, so dates are D/M/YYYY", n_slash:n};
+  if (secondBig) return {order:"MD", reason:"a second number above 12 appears, so dates are M/D/YYYY", n_slash:n};
+  return {order:null, reason:"every date fits both M/D and D/M", n_slash:n};
 }
 function excelSerialMs(v){            // Excel 1900 system; 18264 = 1950-01-01, 73051 = 2099-12-31
   if (!Number.isFinite(v) || v<18264 || v>=73051) return NaN;
@@ -812,7 +871,8 @@ function cohortSummary(rows, mapping){
       mins=raw("lkn_to_puncture_min").map(x=>{ const v=pnum(x); if(v==null) return null; if(Number.isNaN(v)){unparse++; return null;} return v; }); }
     else if (col("lkn_datetime") && col("puncture_datetime")){ src="computed from LKN and puncture date/times";
       const a=raw("lkn_datetime"), b=raw("puncture_datetime");
-      mins=a.map((x,i)=>{ const ta=parseDateTime(x), tb=parseDateTime(b[i]); if(ta==null||tb==null) return null;
+      const oa=(coding.vars.lkn_datetime||{}).order, ob=(coding.vars.puncture_datetime||{}).order;
+      mins=a.map((x,i)=>{ const ta=parseDateTime(x,oa), tb=parseDateTime(b[i],ob); if(ta==null||tb==null) return null;
         if(Number.isNaN(ta)||Number.isNaN(tb)){unparse++; return null;} return (tb-ta)/60000; }); }
     if (mins){ mins=mins.map(v=>{ if(v==null) return null; if(v<0||v>LKN_PUNCT_MAX_MIN){implaus++; return null;} return v; });
       variables.lkn_to_puncture_min=contVar(label,nn(mins),N,{source:src,n_unparseable:unparse,n_implausible_dropped:implaus,
@@ -852,7 +912,8 @@ function cohortSummary(rows, mapping){
   let win={first_month:null,last_month:null,source:null};
   const dsrc = col("procedure_date") ? "procedure_date" : (col("puncture_datetime") ? "puncture_datetime" : null);
   if (dsrc){ let lo=Infinity, hi=-Infinity; const minT=Date.UTC(1990,0,1), maxT=Date.UTC(2100,0,1);
-    for (const x of raw(dsrc)){ const t=parseDateTime(x); if(t==null||Number.isNaN(t)||t<minT||t>=maxT) continue; if(t<lo) lo=t; if(t>hi) hi=t; }
+    const od=(coding.vars[dsrc]||{}).order;
+    for (const x of raw(dsrc)){ const t=parseDateTime(x,od); if(t==null||Number.isNaN(t)||t<minT||t>=maxT) continue; if(t<lo) lo=t; if(t>hi) hi=t; }
     if (lo<Infinity) win={first_month:ymOf(lo),last_month:ymOf(hi),source:dsrc}; }
   return {n_patients:N, enrollment_window:win, suppression_rule:SUPPRESSION_RULE, variables, notes, coding:codingRecord(coding)};
 }
@@ -864,7 +925,7 @@ function cohortSummaryExport(C, siteLabel, nowIso){
 }
 /* ===ENGINE END=== */
 if (typeof module!=="undefined" && module.exports)
-  module.exports = {VARIABLE_SPEC,RISK_SCORES,LOGIC_RULES,runValidation,suggestMap,parseDelimited,auc,pnum,scoreProb,recodeTici,
+  module.exports = {VARIABLE_SPEC,RISK_SCORES,LOGIC_RULES,runValidation,suggestMap,parseDelimited,tableFromGrid,detectDateOrder,auc,pnum,scoreProb,recodeTici,
     COHORT_SPEC,suggestCohortMap,cohortSummary,cohortSummaryExport,parseDateTime,sexAuto,sexCode,raceCode,ethCode,occCode,yesNo,suppressLevels,SUPPRESSION_RULE,
     detectTiciScheme,TICI_SCHEMES,CODED,resolveCoding,codeOf,codingRecord,MISSING_CODE};
 
@@ -912,40 +973,70 @@ if (typeof document!=="undefined") (function(){
     if(ssXml){ const doc=new DOMParser().parseFromString(ssXml,"application/xml");
       for(const si of doc.getElementsByTagName("si")){ let t="";
         for(const tn of si.getElementsByTagName("t")) t+=tn.textContent; shared.push(t); } }
-    // pick first worksheet file present
-    let sheetName=Object.keys(files).find(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n));
-    const shXml=await read(sheetName); if(!shXml) throw new Error("no-sheet");
-    const doc=new DOMParser().parseFromString(shXml,"application/xml");
+    // sheets in workbook order (name -> worksheet file via the workbook relationships)
+    const sheets=[];
+    const wbXml=await read("xl/workbook.xml"), relXml=await read("xl/_rels/workbook.xml.rels");
+    if(wbXml && relXml){
+      const rel={}; const rd=new DOMParser().parseFromString(relXml,"application/xml");
+      for(const r of rd.getElementsByTagName("Relationship")) rel[r.getAttribute("Id")]=r.getAttribute("Target");
+      const wd=new DOMParser().parseFromString(wbXml,"application/xml");
+      for(const sh of wd.getElementsByTagName("sheet")){
+        const rid=sh.getAttribute("r:id")||sh.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships","id");
+        let t=rel[rid]; if(!t) continue; t=t.replace(/^\/?(xl\/)?/,"xl/");
+        if(files[t]) sheets.push({name:sh.getAttribute("name")||t, file:t}); } }
+    if(!sheets.length) Object.keys(files).filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()
+      .forEach((f,i)=>sheets.push({name:"Sheet "+(i+1), file:f}));
+    if(!sheets.length) throw new Error("no-sheet");
     const colOf=r=>{ const m=/^([A-Z]+)/.exec(r); let c=0; for(const ch of m[1]) c=c*26+(ch.charCodeAt(0)-64); return c-1; };
-    const grid=[];
-    for(const row of doc.getElementsByTagName("row")){ const arr=[];
-      for(const c of row.getElementsByTagName("c")){ const ref=c.getAttribute("r")||""; const ci=ref?colOf(ref):arr.length;
-        const t=c.getAttribute("t"); const vEl=c.getElementsByTagName("v")[0]; const isEl=c.getElementsByTagName("t")[0];
-        let val=""; if(t==="s"&&vEl) val=shared[+vEl.textContent]||""; else if(t==="inlineStr"&&isEl) val=isEl.textContent;
-        else if(vEl) val=vEl.textContent; arr[ci]=val; }
-      grid.push(arr); }
-    const nonEmpty=grid.filter(r=>r&&r.some(x=>x!=null&&String(x).trim()!==""));
-    if(!nonEmpty.length) return {headers:[],rows:[]};
-    const headers=(nonEmpty[0]||[]).map(h=>String(h==null?"":h).trim());
-    const rows=nonEmpty.slice(1).map(r=>{const o={}; headers.forEach((h,j)=>o[h]=r[j]==null?"":r[j]); return o;});
-    return {headers,rows};
+    async function grid(file){
+      const doc=new DOMParser().parseFromString(await read(file),"application/xml"); const g=[];
+      for(const row of doc.getElementsByTagName("row")){ const arr=[];
+        for(const c of row.getElementsByTagName("c")){ const ref=c.getAttribute("r")||""; const ci=ref?colOf(ref):arr.length;
+          const t=c.getAttribute("t"); const vEl=c.getElementsByTagName("v")[0]; const isEl=c.getElementsByTagName("t")[0];
+          let val=""; if(t==="s"&&vEl) val=shared[+vEl.textContent]||""; else if(t==="inlineStr"&&isEl) val=isEl.textContent;
+          else if(vEl) val=vEl.textContent; arr[ci]=val; }
+        g.push(arr); }
+      return g; }
+    for(const sh of sheets){ sh.grid=await grid(sh.file);
+      sh.nrows=sh.grid.filter(r=>r&&r.some(x=>x!=null&&String(x).trim()!=="")).length; }
+    return sheets;      // [{name, grid, nrows}] — caller picks one (default: the largest)
   }
 
+  let SHEETS=null, UNCODED_OK=null;
   async function loadFile(file){
-    $("#loadmsg").textContent="Reading "+file.name+" ...";
+    $("#loadmsg").textContent="Reading "+file.name+" ..."; $("#sheetbar").innerHTML=""; SHEETS=null;
     try{
-      const ext=(file.name.split(".").pop()||"").toLowerCase();
-      if(ext==="xlsx"||ext==="xls"){ DATA=await readXlsx(await file.arrayBuffer()); }
-      else { DATA=parseDelimited(await file.text()); }
-      if(!DATA.headers.length) throw new Error("No columns found.");
-      $("#loadmsg").textContent="Loaded "+DATA.rows.length+" rows × "+DATA.headers.length+" columns from "+file.name;
-      buildMapper();
+      const buf=await file.arrayBuffer(), u8=new Uint8Array(buf);
+      if(!u8.length) throw new Error("empty");
+      // legacy Excel 97-2003 (.xls = BIFF in an OLE container, starts D0 CF 11 E0) can't be read in the browser
+      if(u8.length>=4 && u8[0]===0xD0 && u8[1]===0xCF && u8[2]===0x11 && u8[3]===0xE0) throw new Error("biff");
+      if(u8.length>=4 && u8[0]===0x50 && u8[1]===0x4B){          // "PK" = zip = .xlsx
+        SHEETS=await readXlsx(buf);
+        const best=SHEETS.reduce((a,_,i)=>SHEETS[i].nrows>SHEETS[a].nrows?i:a,0);
+        if(SHEETS.length>1){
+          $("#sheetbar").innerHTML="<label class='muted'>This workbook has "+SHEETS.length+" sheets. Sheet to use: <select id='sheetsel' style='width:auto;display:inline-block'>"+
+            SHEETS.map((s,i)=>"<option value='"+esc(s.name).replace(/'/g,"&#39;")+"'"+(i===best?" selected":"")+">"+esc(s.name)+" ("+Math.max(0,s.nrows-1)+" rows)</option>").join("")+"</select></label>";
+          $("#sheetsel").onchange=()=>useTable(tableFromGrid(SHEETS.find(s=>s.name===$("#sheetsel").value).grid), file.name+" — sheet “"+$("#sheetsel").value+"”"); }
+        useTable(tableFromGrid(SHEETS[best].grid), file.name+(SHEETS.length>1?" — sheet “"+SHEETS[best].name+"”":""));
+      } else {
+        useTable(parseDelimited(new TextDecoder().decode(u8)), file.name);
+      }
     }catch(e){
       const m = e.message==="no-inflate" ? "This browser can't unzip Excel files. Please save your sheet as CSV and try again."
-              : e.message==="bad-zip"||e.message==="no-sheet" ? "Couldn't read that Excel file. Try re-saving it, or export to CSV."
+              : e.message==="biff" ? "This is an old-format Excel file (.xls, Excel 97–2003), which can't be read in the browser. Please open it in Excel and save it as .xlsx (Excel Workbook) or .csv, then drop that file here."
+              : e.message==="bad-zip"||e.message==="no-sheet" ? "Couldn't read that Excel file. Try re-saving it as .xlsx, or export to CSV."
+              : e.message==="empty" ? "The file is empty."
               : "Could not read file: "+e.message;
       $("#loadmsg").innerHTML="<span class='err'>"+esc(m)+"</span>";
     }
+  }
+  function useTable(T, label){
+    if(!T.headers.length){ $("#loadmsg").innerHTML="<span class='err'>"+esc(label+": the file is empty (no rows found).")+"</span>"; return; }
+    if(!T.rows.length){ $("#loadmsg").innerHTML="<span class='err'>"+esc(label+": found column names but no data rows.")+"</span>"; return; }
+    DATA=T;
+    $("#loadmsg").innerHTML=esc("Loaded "+T.rows.length+" rows × "+T.headers.length+" columns from "+label)+
+      T.warnings.map(w=>"<br><span class='err'>"+esc(w)+"</span>").join("");
+    buildMapper();
   }
 
   function sampleVals(header){
@@ -954,13 +1045,13 @@ if (typeof document!=="undefined") (function(){
     return vals.join(", ");
   }
   function colSelect(id, selected, includeNone){
-    let o = includeNone ? "<option value=''>(not present)</option>" : "";
+    let o = includeNone ? "<option value=''>— not in my data —</option>" : "";
     for(const h of DATA.headers) o+="<option "+(h===selected?"selected":"")+" value='"+esc(h)+"'>"+esc(h)+"</option>";
     return "<select id='"+id+"'>"+o+"</select>";
   }
   function buildMapper(){
     const guess=suggestMap(DATA.headers);
-    const vmBox=nm=>CODED[nm]?"<div class='vmap' id='vm_"+nm+"'></div>":"";
+    const vmBox=nm=>(CODED[nm]||DATE_VARS.includes(nm))?"<div class='vmap' id='vm_"+nm+"'></div>":"";
     let html="";
     VARIABLE_SPEC.forEach(v=>{
       const sel=guess[v.name];
@@ -989,7 +1080,7 @@ if (typeof document!=="undefined") (function(){
       s.addEventListener("change",()=>{ $("#csamp_"+v.name).textContent=sampleVals(s.value);
         s.closest(".maprow").classList.remove("guessed"); buildValueMap(v.name,true);
         if(v.name==="race"||v.name==="ethnicity") updateEthHint(); }); });
-    Object.keys(CODED).forEach(nm=>buildValueMap(nm,false)); updateEthHint();
+    Object.keys(CODED).concat(DATE_VARS).forEach(nm=>buildValueMap(nm,false)); updateEthHint();
     $("#runmsg").innerHTML="";
     $("#drop").classList.add("hidden"); $("#mapper").classList.remove("hidden");
     $("#results").innerHTML="";
@@ -1005,6 +1096,15 @@ if (typeof document!=="undefined") (function(){
     if(resetOverrides) box.innerHTML="";          // new column -> drop old per-value choices
     const map=currentMapping(); if(!map[nm]){ box.innerHTML=""; return; }
     const cv=resolveCoding(DATA.rows, map).vars[nm]; if(!cv){ box.innerHTML=""; return; }
+    if(cv.kind==="date"){
+      if(!cv.n_slash){ box.innerHTML=""; return; }        // ISO / Excel dates: nothing to decide
+      const cur=(map.date_orders||{})[nm]||"";
+      box.innerHTML="<div><b>Date order:</b> <select class='vmq' data-q='date_order:"+nm+"' style='width:auto;display:inline-block;padding:2px'>"+
+        "<option value=''"+(cur?"":" selected")+">"+(cv.detected?"auto — detected "+esc(DATE_ORDERS[cv.detected]):"— choose (required) —")+"</option>"+
+        Object.keys(DATE_ORDERS).map(o=>"<option value='"+o+"'"+(cur===o?" selected":"")+">"+esc(DATE_ORDERS[o])+"</option>").join("")+
+        "</select> <span class='muted'>("+esc(cv.reason)+")</span></div>"+cv.required.map(w=>"<div class='err'>"+esc(w)+"</div>").join("");
+      box.querySelectorAll("select").forEach(s=>s.addEventListener("change",()=>buildValueMap(nm,false)));
+      return; }
     const keys=Object.keys(cv.display); let h="";
     const codeTxt=c=>{ if(c===undefined) return "<span class='err'>no code → missing</span>"; if(c===null) return "missing";
       const L=cv.levels.find(l=>l[0]===c); return esc(L?L[1]:c); };
@@ -1053,6 +1153,33 @@ if (typeof document!=="undefined") (function(){
          " (Hispanic / Non-Hispanic where stated, otherwise Unknown).");
     else box.textContent=k?k+" race value(s) say Hispanic/Latino: they will fill in ethnicity where the ethnicity column is blank or unknown, and race becomes Unknown/declined unless another race is named.":"";
   }
+  // ---- save / load mapping (settings only: column names, value codes, answers; no data) ----
+  function savedMapping(){
+    const m=currentMapping(), cols={};
+    VARIABLE_SPEC.concat(COHORT_SPEC).forEach(v=>{ if(m[v.name]) cols[v.name]=m[v.name]; });
+    return {schema:"column_mapping/v1", tool:"stroke-score-validator", saved_at:new Date().toISOString(),
+      columns:cols, id_col:$("#idcol").value||null, value_maps:m.value_maps, tici_scheme:m.tici_scheme,
+      date_orders:m.date_orders, coding_choices:m.coding_choices};
+  }
+  function applyMapping(m){
+    if(!m || m.schema!=="column_mapping/v1") throw new Error("not a mapping file saved by this page");
+    const cols=m.columns||{}, missing=[];
+    VARIABLE_SPEC.forEach(v=>{ const h=cols[v.name]||""; if(h&&!DATA.headers.includes(h)){ missing.push(h); return; } $("#sel_"+v.name).value=h; $("#samp_"+v.name).textContent=sampleVals(h); });
+    COHORT_SPEC.forEach(v=>{ const h=cols[v.name]||""; if(h&&!DATA.headers.includes(h)){ missing.push(h); return; } $("#csel_"+v.name).value=h; $("#csamp_"+v.name).textContent=sampleVals(h); });
+    if(m.id_col && DATA.headers.includes(m.id_col)) $("#idcol").value=m.id_col;
+    const all=Object.keys(CODED).concat(DATA_PANEL_VARS());
+    all.forEach(nm=>{ const b=$("#vm_"+nm); if(b) b.innerHTML=""; buildValueMap(nm,false); });
+    const qs=Object.assign({}, m.coding_choices||{}); if(m.tici_scheme) qs.tici_scheme=m.tici_scheme;
+    for(const k in (m.date_orders||{})) qs["date_order:"+k]=m.date_orders[k];
+    for(const [k,v] of Object.entries(qs)){ const s=[...document.querySelectorAll(".vmq")].find(x=>x.getAttribute("data-q")===k);
+      if(s){ s.value=v; s.dispatchEvent(new Event("change")); } }
+    for(const nm in (m.value_maps||{})) for(const [k,code] of Object.entries(m.value_maps[nm])){
+      const s=[...document.querySelectorAll(".vmsel")].find(x=>x.getAttribute("data-var")===nm&&x.getAttribute("data-k")===k);
+      if(s){ s.value=code; s.dispatchEvent(new Event("change")); } }
+    updateEthHint();
+    $("#runmsg").innerHTML="<div class='note'>Mapping loaded."+(missing.length?" These saved columns are not in this file and were skipped: "+esc(missing.join(", "))+".":"")+" Check it, then press Validate &amp; Score.</div>";
+  }
+  const DATA_PANEL_VARS=()=>DATE_VARS;
   function currentMapping(){
     const map={}; VARIABLE_SPEC.forEach(v=>{ map[v.name]=$("#sel_"+v.name).value||null; });
     COHORT_SPEC.forEach(v=>{ map[v.name]=$("#csel_"+v.name).value||null; });
@@ -1061,6 +1188,7 @@ if (typeof document!=="undefined") (function(){
       if(s.value!==s.getAttribute("data-auto")){ (vm[nm]=vm[nm]||{})[s.getAttribute("data-k")]=s.value||MISSING_CODE; } });
     map.value_maps=vm;
     const ch=currentChoices(); map.tici_scheme=ch.tici_scheme||null; delete ch.tici_scheme;
+    map.date_orders={}; for(const k of Object.keys(ch)) if(k.startsWith("date_order:")){ map.date_orders[k.slice(11)]=ch[k]; delete ch[k]; }
     map.coding_choices=ch;
     return map;
   }
@@ -1151,6 +1279,7 @@ if (typeof document!=="undefined") (function(){
     if(K.tici) h+="<p><b>TICI coding:</b> "+esc(K.tici.scheme_label||"not chosen")+" <span class='muted'>("+esc(K.tici.source)+"; "+esc(K.tici.detection_reason)+")</span></p>";
     h+="<div class='scroll'><table><thead><tr><th>variable</th><th>your value → code</th><th>notes</th></tr></thead><tbody>";
     for(const nm in K.variables){ const v=K.variables[nm];
+      if(v.date_order!==undefined){ h+="<tr><td>"+esc(nm)+"</td><td>date order: "+esc(v.date_order||"not needed (ISO / Excel dates)")+"</td><td>"+esc(v.source)+"</td></tr>"; continue; }
       const tab=v.table.map(r=>"<code>"+esc(r.raw)+"</code> → "+esc(r.code==null?"missing":r.code)+(r.how==="auto"?"":" <small class='muted'>("+esc(r.how)+")</small>")).join(", ")+(v.table_truncated?" …":"");
       const notes=[].concat(v.choice&&v.choice.yes_or_1_means?["yes / 1 means: "+v.choice.yes_or_1_means]:[], v.warnings||[]);
       h+="<tr><td>"+esc(nm)+"</td><td>"+tab+"</td><td>"+notes.map(esc).join("<br>")+"</td></tr>"; }
@@ -1231,6 +1360,7 @@ if (typeof document!=="undefined") (function(){
       "</div>"+
       "<div class='toolbar'>"+
        "<input id='siteLabel' placeholder='site label (optional, no PHI)' style='padding:6px 8px;border:1px solid #ccc;border-radius:6px'>"+
+       "<button class='sec' id='editMap'>✎ Edit mapping</button>"+
        "<button class='pri' id='dlResearch'>⬇ Researcher export (de-identified)</button>"+
        "<button class='pri' id='dlCohort'>⬇ Cohort summary (aggregate only)</button>"+
        "<button class='sec' id='dlExc'>Download exceptions.csv</button>"+
@@ -1252,6 +1382,9 @@ if (typeof document!=="undefined") (function(){
     $("#dlExc").onclick=()=>download("exceptions.csv",R.exceptions,["row_id","row_num","check","variable","value","expected"]);
     $("#dlScore").onclick=()=>download("scored_data.csv",R.score.scored,["row_id","peri_score","peri_pred","preop_score","preop_pred","observed"]);
     $("#dlResearch").onclick=()=>exportResearcher(R, $("#siteLabel")?$("#siteLabel").value:"");
+    $("#editMap").onclick=()=>{ $("#mapper").classList.remove("hidden");
+      $("#runmsg").innerHTML="<div class='note'>Change any column, value code or answer above, then press <b>Validate &amp; Score</b> again — the results and exports below are replaced. Your file stays loaded.</div>";
+      $("#mapper").scrollIntoView({behavior:"smooth"}); };
     $("#dlCohort").onclick=()=>downloadJson("cohort_summary.json", cohortSummaryExport(R.cohort, $("#siteLabel")?$("#siteLabel").value:""));
     $("#results").scrollIntoView({behavior:"smooth"});
   }
@@ -1263,6 +1396,12 @@ if (typeof document!=="undefined") (function(){
   ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
   ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
   drop.addEventListener("drop",e=>{ if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+  $("#saveMap").onclick=()=>downloadJson("column_mapping.json", savedMapping());
+  $("#loadMap").onclick=()=>$("#loadMapFile").click();
+  $("#loadMapFile").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+    try{ applyMapping(JSON.parse(await f.text())); }
+    catch(err){ $("#runmsg").innerHTML="<div class='banner bad'>Could not load that mapping: "+esc(err.message)+"</div>"; }
+    $("#loadMapFile").value=""; };
   $("#reset").onclick=()=>{ DATA=null; $("#mapper").classList.add("hidden"); $("#drop").classList.remove("hidden");
     $("#results").innerHTML=""; $("#loadmsg").textContent=""; $("#file").value=""; };
   $("#run").onclick=()=>{ const cmap=currentMapping();
@@ -1271,6 +1410,14 @@ if (typeof document!=="undefined") (function(){
     const cd=resolveCoding(DATA.rows,cmap), req=[];
     for(const nm in cd.vars) cd.vars[nm].required.forEach(w=>req.push(nm+": "+w));
     if(req.length){ $("#runmsg").innerHTML="<div class='banner bad'>Please answer before scoring:<br>"+req.map(esc).join("<br>")+"</div>"; return; }
+    // values with no code are not guessed: list them and ask before scoring them as missing
+    const un=[]; for(const nm in cd.vars){ const v=cd.vars[nm]; if(v.kind==="date") continue;
+      const ks=Object.keys(v.display).filter(k=>v.final[k]===undefined); if(ks.length) un.push(nm+": "+ks.slice(0,8).map(k=>"“"+v.display[k]+"”").join(", ")+(ks.length>8?" …":"")); }
+    const sig=JSON.stringify(un);
+    if(un.length && UNCODED_OK!==sig){
+      $("#runmsg").innerHTML="<div class='banner bad'>These values have no code yet, so those patients would count as missing:<br>"+un.map(esc).join("<br>")+
+        "<br><span style='font-weight:400'>Pick a code in the dropdowns above (red), or</span> <button class='sec' id='runAnyway'>Score anyway — treat them as missing</button></div>";
+      $("#runAnyway").onclick=()=>{ UNCODED_OK=sig; $("#run").click(); }; return; }
     $("#runmsg").innerHTML="";
     const R=runValidation(DATA.rows,cmap,idcol);        // does not modify DATA.rows
     R.cohort=cohortSummary(DATA.rows,cmap);

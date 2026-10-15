@@ -1,0 +1,5 @@
+{
+  "file": "registry_style.xls",
+  "synthetic": true,
+  "expect_error": "old-format Excel (.xls) is not readable in the browser: re-save as .xlsx or .csv"
+}

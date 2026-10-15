@@ -64,7 +64,10 @@ memory. The local server only hands your browser the static HTML file; it never
 sees your data. (You can even skip the server entirely and just double-click
 `validator.html` — it works fully offline via `file://`.)
 
-Excel is read in-browser with no plugins; on a very old browser, save as CSV.
+Excel `.xlsx` is read in-browser with no plugins. If the workbook has several
+sheets, you pick which one to use. Old-format `.xls` (Excel 97–2003) can't be
+read in a browser: the page says so, so save the file as `.xlsx` or `.csv` first.
+Comma-, tab- and semicolon-separated files all work, including European decimal commas (`214,5`).
 The app's checks and score are **identical** to the R version below (verified
 cell-for-cell on the same data).
 
@@ -75,13 +78,49 @@ cell-for-cell on the same data).
 
 ---
 
+## Try it with the example files
+
+The **`examples/`** folder has six small, entirely **synthetic** spreadsheets
+(80 fake patients each). Each is set up like a different kind of site export. Drop any of
+them on the page to see how matching and coding work before you use your own data:
+
+| File | What it looks like |
+|---|---|
+| `study_style.csv` | our exact variable names and codings (TICI 0–5, ambulatory 0/1, smoking 0/1/2) |
+| `registry_style.xlsx` | typical registry headers ("Admission NIHSS", "Hx Malignancy", "mTICI", "LKW" …), text codings, real Excel dates |
+| `messy_export.csv` | REDCap/Epic-style export: numeric codes with no labels (sex 1/2, race codes), ambulatory **reversed** (1 = ambulatory), smoking yes/no, "UNK", "N/A", "mRS 3", "dead", M/D/YYYY times |
+| `semicolon_european.csv` | semicolon-separated, D/M/YYYY dates, decimal commas |
+| `excel_serials.xlsx` | two sheets, dates as Excel serial numbers mixed with text, and unrelated columns (MRN, "Location", "Time", notes) that must not be picked |
+| `minimal.csv` | only NIHSS, cancer and 90-day mRS |
+
+`registry_style.xls` is the same registry sheet in old `.xls` format, to show the
+"please re-save" message. `examples/expected/` holds the correct mapping and the
+known answers for each file. `examples/make_examples.py` regenerates everything.
+
+**Fixing anything the tool guessed:** every column dropdown can be changed or set
+to *— not in my data —*, every value code and question answer can be changed,
+and the TICI coding can be overridden. After scoring, **✎ Edit mapping** takes
+you back to the column matcher with all of your choices kept. Change anything and
+press **Validate & Score** again: the report and exports are rebuilt from the
+original file. **Save mapping** downloads your choices as `column_mapping.json`
+(column names, value codes and answers only, no patient data), and **Load
+mapping…** re-applies them next time.
+
+Developers: `node tests/test_cohort_summary.js` (engine) and
+`(cd tests && npm install) && node tests/test_examples.js` (runs every example
+through the real page headlessly and checks the exports against the known answers).
+
+---
+
 ## Coding checks (web app)
 
 Under every yes/no or category column, the column matcher lists each distinct
 value in your file and the code it will get. Common values (Yes/No, Y/N,
 True/False, 1/0, "current / former / never", "mRS 3") are filled in
 automatically; change any dropdown if one is wrong. **A value with no code is
-treated as missing and counted, never silently as 0.** It is also listed in the
+treated as missing and counted, never silently as 0.** Before scoring, the page
+lists any values that still have no code, such as numeric REDCap race codes, and asks
+you to code them or confirm that they count as missing. It is also listed in the
 report under "Values with no assigned code". Some columns need an explicit answer
 before you can score:
 
@@ -93,6 +132,9 @@ before you can score:
   non-ambulatory**. Text such as "independent" or "wheelchair" is coded by meaning.
   If your column is just 0/1 or yes/no, you must say whether 1 / Yes means
   independent or dependent.
+- **Dates written like 3/5/2023:** M/D or D/M is decided for the whole column
+  (a date such as 25/03/2023 settles it). If no date in the column settles it,
+  you are asked.
 - **Smoking:** the study codes 0 = never, 1 = current, 2 = former. If your column
   has only two values (yes/no or 0/1), former smokers can't be told apart. The app
   warns that they will be under-scored (by 2 points if "yes" means ever-smoker,

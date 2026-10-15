@@ -1,0 +1,75 @@
+{
+  "file": "messy_export.csv",
+  "synthetic": true,
+  "mapping": {
+    "age": "Age (yrs)",
+    "sex": "Sex (1=M, 2=F)",
+    "race": "race",
+    "nihss": "NIHSS_admit",
+    "mrs_pre_stroke": "premorbid_mrs",
+    "pre_stroke_ambulatory_status": "ambulatory",
+    "hx_cancer": "cancer_hx",
+    "hx_dm2": "diabetes",
+    "hx_smoking": "smoker",
+    "tici": "tici_final",
+    "number_of_passes": "num_passes",
+    "mrs_90day": "mrs_90d",
+    "iv_thrombolysis": "ivt",
+    "occlusion_site": "occlusion_vessel",
+    "lkn_datetime": "lkw_dttm",
+    "puncture_datetime": "groin_dttm"
+  },
+  "user_actions": {
+    "choices": {
+      "ambulatory_yes_means": "independent",
+      "smoking_yes_means": "ever"
+    },
+    "value_codes": {
+      "sex": {
+        "1": "Male",
+        "2": "Female"
+      },
+      "race": {
+        "5": "White",
+        "3": "Black or African American",
+        "2": "Asian",
+        "6": "Other",
+        "7": "Unknown/declined"
+      }
+    }
+  },
+  "prompts": [
+    "pre_stroke_ambulatory_status",
+    "hx_smoking"
+  ],
+  "tici_scheme": "mtici",
+  "checks": {
+    "n_patients": 80,
+    "nihss_median": 15.0,
+    "age_median": 64.5,
+    "age_n": 76,
+    "mrs90_n": 76,
+    "mrs90_0_2": 29,
+    "mrs90_6": 4,
+    "tici_n": 79,
+    "tici_ge_2b": 70,
+    "female": 45,
+    "race_white": 48,
+    "race_black": 19,
+    "ivt_yes": 24,
+    "occ_m1": 43,
+    "nonambulatory": 16,
+    "smoke_never": 43,
+    "smoke_current": 37,
+    "smoke_former": 0,
+    "l2p_median": 323.0,
+    "l2p_implausible": 2,
+    "first_month": "2021-03",
+    "last_month": "2024-08",
+    "peri_n_scored": 70,
+    "preop_n_scored": 75,
+    "preop_median": 42.0,
+    "preop_ge_42": 38
+  },
+  "enrollment_source": "puncture_datetime"
+}

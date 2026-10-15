@@ -1,0 +1,81 @@
+age,nihss,tici,number_of_passes,hx_cancer,hx_dm2,pre_stroke_ambulatory_status,mrs_pre_stroke,hx_smoking,mrs_90day,mortality_hospital,sex,race,ethnicity,iv_thrombolysis,prior_stroke,occlusion_site,lkn_datetime,puncture_datetime,procedure_date
+57,2,5,2,0,0,0,0,2,1,0,Female,Asian,Not Hispanic or Latino,0,0,M2,2024-01-06 17:17,2024-01-06 19:19,2024-01-06
+52,14,3,1,0,0,0,0,0,4,0,Male,Other,Not Hispanic or Latino,0,0,M1,2023-07-19 08:47,2023-07-19 10:50,2023-07-19
+72,19,3,2,0,1,0,0,0,1,0,Male,Unknown/declined,Not Hispanic or Latino,0,1,M2,2021-03-04 06:35,2021-03-04 16:01,2021-03-04
+52,18,5,1,1,1,1,1,2,2,0,Female,White,Not Hispanic or Latino,0,0,M2,2021-10-15 22:07,2021-10-16 02:39,2021-10-16
+62,12,5,5,0,0,0,0,1,3,0,Male,White,Not Hispanic or Latino,0,0,ICA,2023-05-29 19:30,2023-05-29 21:26,2023-05-29
+44,7,3,1,0,0,0,0,2,1,0,Female,White,Hispanic or Latino,0,1,M3,2023-04-12 05:59,2023-04-13 00:09,2023-04-13
+89,12,3,1,0,0,0,1,0,4,0,Female,Black or African American,Hispanic or Latino,0,0,M2,2024-01-08 14:14,2024-01-08 16:32,2024-01-08
+52,12,0,4,0,0,0,3,0,6,0,Female,Black or African American,Not Hispanic or Latino,1,0,M2,2022-02-09 03:10,2022-02-09 13:17,2022-02-09
+61,14,2,3,1,0,1,3,2,6,1,Male,White,Not Hispanic or Latino,0,0,M2,2022-11-03 23:22,2022-11-04 03:14,2022-11-04
+80,8,3,3,0,0,0,0,2,1,0,Male,Black or African American,Hispanic or Latino,1,0,ICA,2022-11-24 04:19,2022-11-24 06:46,2022-11-24
+63,21,3,1,0,0,1,4,2,4,0,Female,Black or African American,Not Hispanic or Latino,0,0,M1,2021-06-18 02:36,2021-06-18 11:40,2021-06-18
+71,9,5,2,1,0,0,1,2,3,0,Male,White,Unknown,1,0,M1,2022-09-24 22:17,2022-09-25 04:48,2022-09-25
+54,19,4,3,0,0,0,0,0,3,0,Female,White,Not Hispanic or Latino,0,0,Basilar,2024-02-21 22:20,2024-02-22 02:07,2024-02-22
+53,17,5,1,0,0,0,1,0,4,0,Female,White,Not Hispanic or Latino,1,0,M1,2021-04-17 15:28,2021-04-17 21:24,2021-04-17
+38,12,5,2,1,1,0,0,0,1,0,Female,Other,Not Hispanic or Latino,0,0,M1,2024-05-21 21:51,2024-05-22 00:44,2024-05-22
+64,4,3,1,0,0,1,1,0,5,0,Female,White,Not Hispanic or Latino,1,0,M1,2023-04-18 03:06,2023-04-18 07:43,2023-04-18
+81,15,3,1,0,0,0,0,0,1,0,Female,White,Not Hispanic or Latino,0,0,M2,2021-03-06 08:18,2021-03-06 11:22,2021-03-06
+63,20,3,1,0,0,0,0,0,1,0,Female,White,Hispanic or Latino,0,0,Basilar,2023-10-24 10:53,2023-10-24 20:42,2023-10-24
+64,12,3,1,0,0,1,4,1,4,0,Female,White,Not Hispanic or Latino,0,0,ICA,2021-09-13 02:24,2021-09-13 04:38,2021-09-13
+83,5,3,1,0,1,0,0,0,1,0,Female,White,Not Hispanic or Latino,0,0,ICA,2022-04-30 10:45,2022-05-01 10:22,2022-05-01
+66,15,5,1,0,1,0,0,2,2,0,Female,White,Not Hispanic or Latino,0,0,M1,2023-09-12 14:29,2023-09-12 17:49,2023-09-12
+76,24,5,1,0,1,0,0,0,3,0,Female,White,Not Hispanic or Latino,1,0,ICA,2022-12-01 03:12,2022-12-01 11:55,2022-12-01
+55,8,0,1,0,0,0,0,1,2,0,Male,White,Not Hispanic or Latino,0,0,M3,2022-09-19 19:07,2022-09-20 05:40,2022-09-20
+61,22,1,1,0,0,1,0,0,3,0,Male,Unknown/declined,Not Hispanic or Latino,0,0,M1,2022-12-24 03:05,2022-12-24 04:20,2022-12-24
+75,22,4,1,0,0,0,3,2,5,0,Female,White,Not Hispanic or Latino,0,0,M1,2022-11-18 06:37,2022-11-18 14:28,2022-11-18
+68,4,4,3,0,0,0,3,2,3,0,Female,Other,Not Hispanic or Latino,1,0,ICA,2024-05-01 08:42,2024-05-01 17:13,2024-05-01
+76,27,4,1,0,0,0,0,0,3,0,Female,Asian,Hispanic or Latino,1,0,M3,2021-08-23 13:18,2021-08-23 16:57,2021-08-23
+80,15,3,2,1,0,0,0,0,6,1,Male,White,Not Hispanic or Latino,1,0,ICA,2022-10-20 01:05,2022-10-20 07:44,2022-10-20
+62,10,4,4,1,0,0,0,2,0,0,Male,White,Not Hispanic or Latino,0,0,ICA,2021-11-09 14:44,2021-11-09 18:51,2021-11-09
+67,19,4,1,0,1,0,1,0,2,0,Male,White,Not Hispanic or Latino,0,0,M2,2021-05-29 05:12,2021-05-29 09:07,2021-05-29
+64,22,0,5,0,1,0,0,0,3,0,Male,White,Not Hispanic or Latino,0,0,M2,2023-08-02 02:35,2023-08-02 05:30,2023-08-02
+72,11,3,2,1,0,0,0,0,3,0,Female,Black or African American,Not Hispanic or Latino,0,0,M3,2024-06-14 03:19,2024-06-14 09:17,2024-06-14
+71,9,4,1,0,0,0,2,2,3,0,Female,Asian,Not Hispanic or Latino,0,0,ICA,2021-08-01 16:25,2021-08-02 08:07,2021-08-02
+69,34,3,3,0,0,0,0,2,4,0,Male,White,Not Hispanic or Latino,0,0,M2,2023-02-09 22:20,2023-02-10 05:30,2023-02-10
+67,17,3,1,0,1,0,0,2,1,0,Male,White,Not Hispanic or Latino,0,0,M1,2021-08-17 09:32,2021-08-17 11:01,2021-08-17
+96,16,1,4,0,0,0,0,0,4,0,Male,White,Not Hispanic or Latino,1,0,ICA,2022-06-17 18:03,2022-06-18 02:55,2022-06-18
+69,5,3,2,0,0,0,1,1,5,0,Female,White,Not Hispanic or Latino,0,0,M2,2022-02-04 13:40,2022-02-04 17:27,2022-02-04
+76,6,1,1,0,0,0,0,0,4,0,Male,White,Not Hispanic or Latino,0,0,M2,2023-04-28 01:13,2023-04-28 04:22,2023-04-28
+45,9,4,1,0,1,0,0,0,2,0,Male,Black or African American,Not Hispanic or Latino,0,0,M2,2024-07-19 14:49,2024-07-19 17:44,2024-07-19
+53,11,2,4,0,1,0,0,0,4,0,Male,White,Not Hispanic or Latino,1,0,M3,2021-09-29 00:31,2021-09-29 07:42,2021-09-29
+50,14,5,1,0,1,0,0,0,0,0,Female,White,Not Hispanic or Latino,1,0,M1,2023-06-04 14:32,2023-06-04 19:06,2023-06-04
+50,15,4,1,0,0,0,0,2,2,0,Female,White,Hispanic or Latino,0,0,M2,2021-09-12 02:35,2021-09-13 08:48,2021-09-13
+66,10,3,1,0,0,0,0,0,3,0,Female,White,Hispanic or Latino,1,0,ICA,2021-04-07 01:40,2021-04-07 12:37,2021-04-07
+71,7,3,1,0,0,0,0,1,1,0,Male,Black or African American,Not Hispanic or Latino,0,0,M3,2022-09-20 16:01,2022-09-20 21:21,2022-09-20
+68,10,3,1,0,0,0,0,2,4,0,Male,White,Unknown,0,0,Basilar,2023-02-09 22:40,2023-02-10 01:34,2023-02-10
+64,20,5,4,0,0,0,1,0,4,0,Male,Black or African American,Not Hispanic or Latino,1,0,ICA,2022-07-07 07:48,2022-07-07 10:13,2022-07-07
+62,30,2,2,0,0,0,3,0,6,0,Female,White,Hispanic or Latino,1,0,M2,2022-05-28 13:10,2022-05-28 15:20,2022-05-28
+67,11,1,1,0,1,0,0,0,2,0,Male,Black or African American,Not Hispanic or Latino,1,0,M2,2022-10-30 19:46,2022-10-31 11:29,2022-10-31
+63,17,2,4,1,1,0,2,2,4,0,Male,White,Not Hispanic or Latino,0,0,M3,2022-07-15 09:41,2022-07-15 13:06,2022-07-15
+45,20,3,1,0,1,0,2,2,4,0,Male,White,Not Hispanic or Latino,0,0,M1,2023-08-18 11:38,2023-08-18 19:22,2023-08-18
+92,29,5,1,1,0,0,0,1,4,0,Female,White,Not Hispanic or Latino,0,0,ICA,2024-03-14 22:13,2024-03-15 10:09,2024-03-15
+47,15,5,1,0,0,0,0,2,3,0,Female,White,Not Hispanic or Latino,1,0,Basilar,2022-01-17 13:37,2022-01-18 04:28,2022-01-18
+53,9,3,2,0,0,0,0,1,2,0,Male,White,Not Hispanic or Latino,0,0,Basilar,2022-05-28 01:03,2022-05-28 08:07,2022-05-28
+66,15,1,3,1,0,0,0,2,5,0,Male,White,Unknown,0,0,ICA,2022-01-20 07:11,2022-01-20 09:43,2022-01-20
+96,26,5,1,0,0,0,0,0,5,0,Female,White,Not Hispanic or Latino,1,0,ICA,2021-05-03 01:22,2021-05-03 03:32,2021-05-03
+76,21,2,1,0,1,0,2,0,5,0,Male,Unknown/declined,Hispanic or Latino,0,0,M1,2021-05-22 05:28,2021-05-22 09:25,2021-05-22
+56,23,3,4,0,1,0,0,0,3,0,Female,White,Hispanic or Latino,1,0,M1,2023-06-06 13:37,2023-06-06 16:38,2023-06-06
+48,7,5,1,0,0,0,0,2,0,0,Female,Black or African American,Not Hispanic or Latino,1,0,M2,2024-07-13 15:55,2024-07-13 22:09,2024-07-13
+86,4,4,1,0,1,0,0,1,0,0,Male,White,Unknown,0,0,M1,2021-06-27 19:37,2021-06-28 09:20,2021-06-28
+70,8,3,2,0,0,1,4,0,3,0,Female,White,Not Hispanic or Latino,1,0,ICA,2022-05-11 00:45,2022-05-11 03:57,2022-05-11
+73,7,3,1,0,0,1,0,2,1,0,Male,Black or African American,Not Hispanic or Latino,0,0,M1,2022-08-26 05:57,2022-08-26 15:47,2022-08-26
+62,16,5,4,0,1,0,0,2,1,0,Male,White,Not Hispanic or Latino,1,0,M3,2022-12-16 03:07,2022-12-16 10:39,2022-12-16
+49,13,5,2,0,0,0,0,0,1,0,Female,White,Not Hispanic or Latino,0,1,ICA,2021-12-17 07:57,2021-12-17 23:29,2021-12-17
+54,10,3,1,0,1,0,4,0,1,0,Male,White,Not Hispanic or Latino,0,0,M2,2023-12-07 02:27,2023-12-07 10:54,2023-12-07
+73,17,3,1,0,1,0,0,0,3,0,Female,Black or African American,Not Hispanic or Latino,1,0,M1,2022-02-17 11:55,2022-02-18 05:19,2022-02-18
+69,25,3,1,0,0,0,0,2,3,0,Male,Black or African American,Hispanic or Latino,0,1,ICA,2021-06-22 14:39,2021-06-23 02:59,2021-06-23
+72,4,4,1,0,0,1,1,0,4,0,Male,Black or African American,Unknown,1,0,M1,2023-05-17 07:24,2023-05-17 11:25,2023-05-17
+49,16,1,3,0,0,0,1,1,3,0,Male,White,Hispanic or Latino,1,0,M2,2024-07-05 13:48,2024-07-05 20:28,2024-07-05
+78,17,3,1,0,0,1,3,0,6,1,Male,White,Not Hispanic or Latino,0,0,M1,2024-07-29 18:01,2024-07-30 02:12,2024-07-30
+61,20,1,1,0,0,1,0,2,4,0,Female,Black or African American,Not Hispanic or Latino,1,0,M1,2022-04-03 12:22,2022-04-03 15:09,2022-04-03
+61,21,2,2,0,1,0,1,0,5,0,Female,White,Not Hispanic or Latino,1,0,M1,2023-05-03 10:28,2023-05-03 13:12,2023-05-03
+44,11,5,2,0,0,0,1,0,0,0,Male,Black or African American,Not Hispanic or Latino,1,0,M1,2021-05-29 13:10,2021-05-29 16:29,2021-05-29
+53,7,0,2,1,0,0,0,2,3,0,Male,White,Hispanic or Latino,0,0,M1,2023-02-28 09:53,2023-02-28 14:54,2023-02-28
+66,16,2,2,0,0,0,0,1,5,0,Male,White,Not Hispanic or Latino,1,0,ICA,2023-08-12 20:19,2023-08-12 23:53,2023-08-12
+70,10,3,5,1,0,0,0,0,6,0,Female,Other,Not Hispanic or Latino,0,0,M3,2022-04-26 08:14,2022-04-26 20:02,2022-04-26
+57,8,3,1,0,0,0,1,1,5,0,Female,White,Not Hispanic or Latino,0,0,M1,2024-07-20 05:15,2024-07-20 15:14,2024-07-20
+59,17,3,4,0,0,0,2,0,4,0,Female,White,Not Hispanic or Latino,0,0,M1,2021-06-28 13:43,2021-06-28 21:12,2021-06-28
+71,29,3,1,0,1,1,0,1,5,0,Male,White,Not Hispanic or Latino,0,0,Basilar,2021-06-22 09:04,2021-06-22 20:51,2021-06-22
+66,24,3,4,0,1,0,0,0,3,0,Female,Black or African American,Not Hispanic or Latino,0,0,ICA,2022-05-25 18:43,2022-05-26 01:32,2022-05-26
+58,18,3,4,0,0,0,1,0,3,0,Female,Black or African American,Not Hispanic or Latino,1,1,M2,2022-05-09 02:19,2022-05-09 07:19,2022-05-09

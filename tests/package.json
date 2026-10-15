@@ -1,0 +1,6 @@
+{
+  "name": "stroke-score-validator-tests",
+  "private": true,
+  "description": "Test-only dependency for tests/test_examples.js (the page itself has no dependencies).",
+  "devDependencies": { "jsdom": "^24.1.0" }
+}

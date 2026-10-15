@@ -12,7 +12,7 @@ const src = html.slice(html.indexOf("*/", a) + 2, b);
 const ctx = vm.createContext({});
 vm.runInContext(src + "\n;this.E={VARIABLE_SPEC,RISK_SCORES,COHORT_SPEC,runValidation,suggestMap,suggestCohortMap," +
   "cohortSummary,cohortSummaryExport,parseDateTime,sexAuto,sexCode,raceCode,ethCode,occCode,yesNo,suppressLevels,recodeTici," +
-  "detectTiciScheme,resolveCoding,codeOf,codingRecord,MISSING_CODE};", ctx);
+  "detectTiciScheme,resolveCoding,codeOf,codingRecord,MISSING_CODE,parseDelimited,tableFromGrid,detectDateOrder,pnum};", ctx);
 const E = ctx.E;
 
 let pass = 0, fail = 0;
@@ -408,6 +408,59 @@ t("unrecognised binary values -> missing and counted, never 0", () => {
   const c = E.cohortSummary(rr, { hx_cancer: "C" });
   eq(c.variables.hx_cancer.n, 28); eq(c.variables.hx_cancer.n_unrecognized, 12); eq(c.variables.hx_cancer.levels.No.count, 14);
   const tab = c.coding.variables.hx_cancer.table; eq(tab.find(r => r.raw === "maybe").how, "no code (missing)");
+});
+
+
+// ---- file / header handling --------------------------------------------------------
+console.log("file and header handling");
+t("delimiter: comma, tab and semicolon", () => {
+  eq(E.parseDelimited("a,b\n1,2\n").headers, ["a", "b"]);
+  eq(E.parseDelimited("a\tb\n1\t2\n").headers, ["a", "b"]);
+  const T = E.parseDelimited("age;LKN to puncture (min)\n70;214,5\n");
+  eq(T.headers, ["age", "LKN to puncture (min)"]); eq(T.rows[0]["LKN to puncture (min)"], "214,5");
+  eq(E.parseDelimited('"x, y";z\n1;2\n').headers, ["x, y", "z"]);          // comma inside quotes is not the delimiter
+});
+t("decimal comma vs thousands separator", () => {
+  eq(E.pnum("214,5"), 214.5); eq(E.pnum("0,75"), 0.75); eq(E.pnum("1,234"), 1234); eq(E.pnum("12"), 12);
+});
+t("duplicate / blank headers are renamed, not overwritten", () => {
+  const T = E.tableFromGrid([["Age", "NIHSS", "Age", ""], ["60", "10", "61", "x"]]);
+  eq(T.headers, ["Age", "NIHSS", "Age (2)", "Column 4"]); eq(T.rows[0]["Age (2)"], "61");
+  assert(/Duplicate/.test(T.warnings[0]));
+});
+t("header-less sheet is flagged", () => {
+  assert(E.tableFromGrid([["67", "12", "2b", "1"], ["71", "20", "3", "2"]]).warnings.some(w => /looks like data/.test(w)));
+  eq(E.tableFromGrid([["Age", "NIHSS"], ["67", "12"]]).warnings, []);
+});
+t("date order decided per column; ambiguous / contradictory -> ask", () => {
+  eq(E.detectDateOrder(["05/03/2023", "25/03/2023"]).order, "DM");
+  eq(E.detectDateOrder(["3/5/2023 10:00", "3/25/2023 11:00"]).order, "MD");
+  eq(E.detectDateOrder(["3/5/2023", "4/6/2023"]).order, null);
+  eq(E.detectDateOrder(["13/1/2023", "1/13/2023"]).order, null);
+  eq(E.detectDateOrder(["2023-03-05", "45000"]).n_slash, 0);
+  const rr = [{ P: "05/03/2023" }, { P: "25/03/2023" }, { P: "11/04/2023" }];
+  const c = E.cohortSummary(rr, { procedure_date: "P" });
+  eq(c.enrollment_window.first_month, "2023-03"); eq(c.enrollment_window.last_month, "2023-04");   // 11/04 = 11 April, not 4 Nov
+  const amb = [{ P: "3/5/2023" }, { P: "4/6/2023" }];
+  assert(E.resolveCoding(amb, { procedure_date: "P" }).vars.procedure_date.required.length === 1, "ambiguous dates must be asked");
+  const c2 = E.cohortSummary(amb, { procedure_date: "P", date_orders: { procedure_date: "DM" } });
+  eq(c2.enrollment_window.first_month, "2023-05"); eq(c2.coding.variables.procedure_date.source, "user choice");
+});
+t("short generic headers are not grabbed (Time, Location, Date)", () => {
+  const hdr = ["Time", "Location", "Date", "Notes", "MRN"];
+  const sm = E.suggestMap(hdr), cm = E.suggestCohortMap(hdr, Object.values(sm));
+  eq(Object.values(sm).filter(Boolean), []); eq(Object.values(cm).filter(Boolean), []);
+  eq(E.suggestCohortMap(["Occlusion location", "Location"], []).occlusion_site, "Occlusion location");
+  eq(E.suggestMap(["Pre-morbid mRS"]).mrs_pre_stroke, "Pre-morbid mRS");
+});
+t("numeric race / occlusion codes are not guessed", () => {
+  eq(E.raceCode("5")[0], undefined); eq(E.occCode("2")[0], undefined);
+  const cd = E.resolveCoding([{ R: "5" }, { R: "White" }], { race: "R" });
+  eq(cd.vars.race.final["5"], undefined); eq(cd.vars.race.final["white"], "White");
+});
+t("'unknown' / 'UNK' / 'N/A' in coded columns -> missing (not an error)", () => {
+  const cd = E.resolveCoding([{ C: "unknown" }, { C: "UNK" }, { C: "Yes" }], { hx_cancer: "C" });
+  eq(cd.vars.hx_cancer.final["unknown"], null); eq(cd.vars.hx_cancer.final["unk"], null); eq(cd.vars.hx_cancer.final["yes"], 1);
 });
 
 console.log("\n" + pass + " passed, " + fail + " failed");

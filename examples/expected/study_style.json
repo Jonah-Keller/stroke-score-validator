@@ -1,0 +1,64 @@
+{
+  "file": "study_style.csv",
+  "synthetic": true,
+  "mapping": {
+    "age": "age",
+    "nihss": "nihss",
+    "tici": "tici",
+    "number_of_passes": "number_of_passes",
+    "hx_cancer": "hx_cancer",
+    "hx_dm2": "hx_dm2",
+    "pre_stroke_ambulatory_status": "pre_stroke_ambulatory_status",
+    "mrs_pre_stroke": "mrs_pre_stroke",
+    "hx_smoking": "hx_smoking",
+    "mrs_90day": "mrs_90day",
+    "mortality_hospital": "mortality_hospital",
+    "sex": "sex",
+    "race": "race",
+    "ethnicity": "ethnicity",
+    "iv_thrombolysis": "iv_thrombolysis",
+    "prior_stroke": "prior_stroke",
+    "occlusion_site": "occlusion_site",
+    "lkn_datetime": "lkn_datetime",
+    "puncture_datetime": "puncture_datetime",
+    "procedure_date": "procedure_date"
+  },
+  "user_actions": {
+    "choices": {
+      "ambulatory_yes_means": "dependent"
+    }
+  },
+  "prompts": [
+    "pre_stroke_ambulatory_status"
+  ],
+  "tici_scheme": "study05",
+  "checks": {
+    "n_patients": 80,
+    "nihss_median": 15.0,
+    "age_median": 64.0,
+    "age_n": 80,
+    "mrs90_n": 80,
+    "mrs90_0_2": 27,
+    "mrs90_6": 6,
+    "tici_n": 80,
+    "tici_ge_2b": 62,
+    "female": 41,
+    "race_white": 52,
+    "race_black": 18,
+    "hispanic": 13,
+    "ivt_yes": 30,
+    "occ_m1": 25,
+    "nonambulatory": 12,
+    "smoke_never": 42,
+    "smoke_current": 12,
+    "smoke_former": 26,
+    "l2p_median": 338.0,
+    "l2p_implausible": 0,
+    "first_month": "2021-03",
+    "last_month": "2024-07",
+    "peri_n_scored": 80,
+    "preop_n_scored": 80,
+    "preop_median": 41.5,
+    "preop_ge_42": 40
+  }
+}
