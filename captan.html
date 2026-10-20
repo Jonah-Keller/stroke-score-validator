@@ -2,50 +2,43 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CAPTaN Score — post-thrombectomy outcome calculator</title>
 <meta name="description" content="CAPTaN score: a five-variable bedside equation, computed at the end of mechanical thrombectomy, predicting 90-day functional independence; externally validated in 981 patients.">
-<style>
-*{box-sizing:border-box}
-body{font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#222;background:#f7f8fa;max-width:680px;margin:0 auto;padding:36px 22px 70px}
-h1{font-size:26px;font-weight:700;margin:0 0 2px;letter-spacing:-.01em}
-h1 small{font-size:15px;font-weight:500;color:#666;display:block;margin-top:2px}
-h2{font-size:15px;font-weight:700;margin:0 0 10px;color:#333;text-transform:uppercase;letter-spacing:.04em}
-.sub{color:#555;font-size:14.5px;margin:12px 0 22px}
-.card{background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:20px 22px;margin:0 0 18px}
-.row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid #f0f1f3}
-.row:last-child{border-bottom:none}
-.row label{font-size:15px}
-.row label span{display:block;color:#888;font-size:12.5px;font-weight:400}
-select,input[type=number]{padding:8px 10px;border:1px solid #c7ccd4;border-radius:8px;font-size:15px;min-width:160px;background:#fff}
-.result{text-align:center;padding:6px 0 4px}
-.score{font-size:15px;color:#555}
-.score b{font-size:22px;color:#222}
-.big{font-size:56px;font-weight:800;line-height:1.05;margin-top:8px}
-.lbl{color:#555;font-size:14px;margin-top:2px}
-.band{display:inline-block;margin-top:12px;padding:6px 16px;border-radius:20px;font-weight:700;font-size:14px;color:#fff}
-.meta{color:#555;font-size:13.5px;margin-top:14px;text-align:center}
-.eq{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;background:#f3f4f6;border-radius:8px;padding:10px 12px;color:#333;overflow-x:auto;white-space:nowrap}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #eef0f2}
-th{font-weight:600;color:#444;background:#fafbfc}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-tr.hl td{background:#fff8e1;font-weight:600}
-.disc{color:#777;font-size:12.5px;border-top:1px solid #eee;padding-top:14px;margin-top:8px}
-.foot{color:#777;font-size:13px;margin-top:26px}
-a{color:#1a1a1a}
-</style></head><body>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="site.css">
+</head><body>
+<a class="skip" href="#main">Skip to content</a>
 
-<h1>CAPTaN Score <small>Post-thrombectomy outcome calculator · 90-day functional independence (mRS 0–2)</small></h1>
-<p class="sub">Five variables documented in every procedural note — <b>C</b>ancer history, <b>A</b>ge, <b>P</b>asses, <b>T</b>ICI grade, <b>a</b>nd <b>N</b>IHSS — available the moment the procedure ends. This page does the arithmetic and looks up the probability for you.</p>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="index.html">Thrombectomy Outcome Scores</a>
+  <nav class="site-nav" aria-label="Site">
+    <a href="calculator.html">ASCEND</a>
+    <a href="captan.html" aria-current="page">CAPTaN</a>
+    <a href="https://github.com/Jonah-Keller/stroke-score-validator/releases/latest/download/validator.html">Validator</a>
+    <a href="https://github.com/Jonah-Keller/stroke-score-validator">GitHub</a>
+  </nav>
+</div></header>
 
-<div class="card" id="inputs">
-  <div class="row"><label>NIHSS at presentation</label><input type="number" id="nihss" min="0" max="42" value="12"></div>
-  <div class="row"><label>Age <span>years</span></label><input type="number" id="age" min="18" max="110" value="70"></div>
-  <div class="row"><label>History of cancer <span>any prior diagnosis, incl. remission</span></label><select id="cancer"><option value="0">No</option><option value="1">Yes</option></select></div>
-  <div class="row"><label>Number of passes</label><input type="number" id="passes" min="1" max="15" value="2"></div>
-  <div class="row"><label>Final mTICI grade</label><select id="tici"><option value="0">0</option><option value="1">1</option><option value="2">2a</option><option value="3" selected>2b</option><option value="4">2c</option><option value="5">3</option></select></div>
+<main id="main"><div class="wrap">
+
+<div class="page-head">
+  <span class="eyebrow">After the procedure</span>
+  <h1>CAPTaN Score <small>Post-thrombectomy outcome calculator · 90-day functional independence (mRS 0–2)</small></h1>
+  <p class="lede">Five variables documented in every procedural note — <b>C</b>ancer history, <b>A</b>ge, <b>P</b>asses, <b>T</b>ICI grade, <b>a</b>nd <b>N</b>IHSS — available the moment the procedure ends. This page does the arithmetic and looks up the probability for you.</p>
+  <a class="switch" href="calculator.html">Before the procedure? → ASCEND</a>
 </div>
 
-<div class="card">
-  <div class="result">
+<div class="calc">
+<section class="card" id="inputs" aria-labelledby="inputs-h">
+  <h2 class="section-title" id="inputs-h">Patient variables</h2>
+  <div class="row"><label for="nihss">NIHSS at presentation</label><input type="number" id="nihss" min="0" max="42" value="12"></div>
+  <div class="row"><label for="age">Age <span>years</span></label><input type="number" id="age" min="18" max="110" value="70"></div>
+  <div class="row"><label for="cancer">History of cancer <span>any prior diagnosis, incl. remission</span></label><select id="cancer"><option value="0">No</option><option value="1">Yes</option></select></div>
+  <div class="row"><label for="passes">Number of passes</label><input type="number" id="passes" min="1" max="15" value="2"></div>
+  <div class="row"><label for="tici">Final mTICI grade</label><select id="tici"><option value="0">0</option><option value="1">1</option><option value="2">2a</option><option value="3" selected>2b</option><option value="4">2c</option><option value="5">3</option></select></div>
+</section>
+
+<section class="card result-card" aria-labelledby="result-h">
+  <h2 class="section-title" id="result-h">Result</h2>
+  <div class="result" aria-live="polite">
     <div class="score">CAPTaN score = <b id="score">—</b></div>
     <div class="big" id="pgood">—</div>
     <div class="lbl">predicted probability of <b>good outcome</b> (mRS 0–2 at 90 days)</div>
@@ -53,17 +46,18 @@ a{color:#1a1a1a}
   </div>
   <div class="meta" id="meta"></div>
   <div class="disc">Prognostic estimate only. It informs, but does not replace, clinical judgment, and is not a directive for treatment or goals-of-care decisions. Probabilities are calibrated to the derivation cohort (36.6% functional independence); centers with a materially different baseline outcome rate should interpret absolute probabilities accordingly.</div>
+</section>
 </div>
 
-<div class="card">
-  <h2>The equation</h2>
+<section class="card">
+  <h2 class="section-title">The equation</h2>
   <div class="eq">CAPTaN = 22×Cancer + 1×Age + 2×Passes + 2×NIHSS − 7×mTICI</div>
-  <p style="font-size:13.5px;color:#555;margin:10px 0 0">mTICI is scored 0–5 (0, 1, 2a→2, 2b→3, 2c→4, 3→5). Score ≥ 86 flags higher risk of a poor outcome (mRS 3–6).</p>
-</div>
+  <p class="note">mTICI is scored 0–5 (0, 1, 2a→2, 2b→3, 2c→4, 3→5). Score ≥ 86 flags higher risk of a poor outcome (mRS 3–6).</p>
+</section>
 
-<div class="card">
-  <h2>Observed good outcomes by score — all three cohorts</h2>
-  <table id="bands">
+<section class="card">
+  <h2 class="section-title">Observed good outcomes by score — all three cohorts</h2>
+  <div class="table-wrap"><table id="bands">
     <thead><tr><th>CAPTaN score</th><th class="num">Calibrated</th><th class="num">Penn derivation<br><small>n = 421</small></th><th class="num">Penn 2024–26<br><small>n = 250</small></th><th class="num">Independent site<br><small>n = 731</small></th></tr></thead>
     <tbody>
       <tr data-lo="-999" data-hi="60"><td>&lt; 60</td><td class="num">84%</td><td class="num">75% <small>(87)</small></td><td class="num">55% <small>(57)</small></td><td class="num">57% <small>(197)</small></td></tr>
@@ -75,24 +69,29 @@ a{color:#1a1a1a}
       <tr data-lo="110" data-hi="120"><td>110 – 119</td><td class="num">10%</td><td class="num">14% <small>(28)</small></td><td class="num">5% <small>(21)</small></td><td class="num">8% <small>(26)</small></td></tr>
       <tr data-lo="120" data-hi="999"><td>≥ 120</td><td class="num">5%</td><td class="num">5% <small>(38)</small></td><td class="num">5% <small>(21)</small></td><td class="num">7% <small>(28)</small></td></tr>
     </tbody>
-  </table>
-  <p style="font-size:12.5px;color:#777;margin:10px 0 0">The highlighted row is this patient's band; percentages are the share of patients in that band who reached mRS 0–2 at 90 days (n in parentheses). "Calibrated" is the logistic fit to the derivation cohort that produces the headline probability above: P(good) = 1 / (1 + e<sup>−(2.9886 − 0.04526·score)</sup>), shown at the band midpoint.</p>
-</div>
+  </table></div>
+  <p class="note">The highlighted row is this patient's band; percentages are the share of patients in that band who reached mRS 0–2 at 90 days (n in parentheses). "Calibrated" is the logistic fit to the derivation cohort that produces the headline probability above: P(good) = 1 / (1 + e<sup>−(2.9886 − 0.04526·score)</sup>), shown at the band midpoint.</p>
+</section>
 
-<div class="card">
-  <h2>How the score has been validated</h2>
-  <table>
+<section class="card">
+  <h2 class="section-title">How the score has been validated</h2>
+  <div class="table-wrap"><table>
     <thead><tr><th>Cohort</th><th class="num">n</th><th class="num">Good outcome</th><th class="num">AUC (95% CI)</th></tr></thead>
     <tbody>
       <tr><td>Derivation holdout (Penn, internal)</td><td class="num">84</td><td class="num">36.6%</td><td class="num">0.837 (0.750–0.923)</td></tr>
       <tr><td>Prospective validation cohort (Penn, 2024–2026)</td><td class="num">250</td><td class="num">24.4%</td><td class="num">0.755 (0.683–0.822)</td></tr>
       <tr><td>Independent institution</td><td class="num">731</td><td class="num">36.0%</td><td class="num">0.732 (0.697–0.771)</td></tr>
     </tbody>
-  </table>
-  <p style="font-size:13px;color:#555;margin:10px 0 0">The score was applied without refitting in both external cohorts. Looking for the pre-operative score instead? <a href="calculator.html">ASCEND calculator</a>. Want to validate on your own patients? <a href="index.html">Use the validator</a> — it runs entirely on your computer and no patient data leaves your machine.</p>
-</div>
+  </table></div>
+  <p class="note">The score was applied without refitting in both external cohorts. Looking for the pre-operative score instead? <a href="calculator.html">ASCEND calculator</a>. Want to validate on your own patients? <a href="index.html">Use the validator</a> — it runs entirely on your computer and no patient data leaves your machine.</p>
+</section>
 
-<p class="foot">Research tool; not for sole clinical decision-making. Source and methods: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a>.</p>
+</div></main>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Research tool; not for sole clinical decision-making. Patient data is read and processed only in your browser; nothing leaves your machine.</p>
+  <p>Source and methods: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a></p>
+</div></footer>
 
 <script>
 // CAPTaN score (published integer points); mTICI as 0-5

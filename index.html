@@ -2,63 +2,98 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thrombectomy Outcome Scores</title>
 <meta name="description" content="Two bedside scores that predict 90-day functional independence after mechanical thrombectomy: ASCEND before the procedure and CAPTaN after it. Calculators, and a validator to test both on your own cohort.">
-<style>
-*{box-sizing:border-box}
-body{font:16px/1.65 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#222;background:#fff;
-     max-width:640px;margin:0 auto;padding:64px 24px}
-h2{font-size:18px;font-weight:650;margin:30px 0 10px}
-h1{font-size:30px;font-weight:700;margin:0 0 6px;line-height:1.2;letter-spacing:-.01em}
-.tag{color:#666;font-size:16px;margin:0 0 26px}
-p{margin:0 0 18px;color:#333}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:0 0 26px}
-@media (max-width:560px){.grid{grid-template-columns:1fr}}
-.tile{display:block;border:1px solid #e3e6ea;border-radius:12px;padding:18px 18px 16px;text-decoration:none;color:#222;background:#fafbfc}
-.tile:hover{border-color:#1a1a1a;background:#fff}
-.tile b{display:block;font-size:17px;margin-bottom:4px}
-.tile span{color:#555;font-size:14px}
-.eq{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;background:#f3f4f6;border-radius:8px;padding:10px 12px;color:#333;overflow-x:auto;white-space:nowrap;margin:0 0 22px}
-table{width:100%;border-collapse:collapse;font-size:14px;margin:0 0 22px}
-th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #eef0f2}
-th{font-weight:600;color:#444}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-.fine{color:#777;font-size:13.5px;border-top:1px solid #eee;padding-top:16px;margin-top:26px}
-a{color:#1a1a1a}
-</style></head><body>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="site.css">
+</head><body>
+<a class="skip" href="#main">Skip to content</a>
 
-<h1>Thrombectomy Outcome Scores</h1>
-<p class="tag">Bedside estimates of 90-day functional independence (mRS 0–2) for patients undergoing mechanical thrombectomy. Choose the score that fits where you are in the patient's course.</p>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="index.html" aria-current="page">Thrombectomy Outcome Scores</a>
+  <nav class="site-nav" aria-label="Site">
+    <a href="calculator.html">ASCEND</a>
+    <a href="captan.html">CAPTaN</a>
+    <a href="https://github.com/Jonah-Keller/stroke-score-validator/releases/latest/download/validator.html">Validator</a>
+    <a href="https://github.com/Jonah-Keller/stroke-score-validator">GitHub</a>
+  </nav>
+</div></header>
 
-<div class="grid">
-  <a class="tile" href="calculator.html"><b>Before the procedure: ASCEND →</b><span>Six variables available during the consent conversation.</span></a>
-  <a class="tile" href="captan.html"><b>After the procedure: CAPTaN →</b><span>Five variables, including passes and mTICI, for counseling the moment the procedure ends.</span></a>
-  <a class="tile" href="https://github.com/Jonah-Keller/stroke-score-validator/releases/latest/download/validator.html" style="grid-column:1/-1"><b>Validate on your data →</b><span>Download a single-file tool that scores your whole cohort (both scores) locally. Nothing is uploaded.</span></a>
+<main id="main"><div class="wrap">
+
+<section class="hero">
+  <h1>Thrombectomy Outcome Scores</h1>
+  <p class="lede">Bedside estimates of 90-day functional independence (mRS 0–2) for patients undergoing mechanical thrombectomy. Choose the score that fits where you are in the patient's course.</p>
+</section>
+
+<div class="chooser">
+  <a class="choice" href="calculator.html">
+    <span class="when">Before the procedure</span>
+    <span class="name">ASCEND</span>
+    <span class="desc">Six variables available during the consent conversation.</span>
+    <span class="facts"><span>6 variables</span><span>≥ 42 = higher risk</span></span>
+    <span class="go">Open the ASCEND calculator →</span>
+  </a>
+  <div class="timeline-step" aria-hidden="true"><span class="arrow">→</span><span class="pill">Thrombectomy</span><span class="arrow">→</span></div>
+  <a class="choice" href="captan.html">
+    <span class="when">After the procedure</span>
+    <span class="name">CAPTaN</span>
+    <span class="desc">Five variables, including passes and mTICI, for counseling the moment the procedure ends.</span>
+    <span class="facts"><span>5 variables</span><span>≥ 86 = higher risk</span></span>
+    <span class="go">Open the CAPTaN calculator →</span>
+  </a>
 </div>
 
-<h2>ASCEND (pre-procedure)</h2>
-<div class="eq">ASCEND = 2×NIHSS + 22×Cancer + 7×Diabetes + 7×Non-ambulatory + 6×Pre-stroke mRS + 2×Smoking &nbsp;·&nbsp; ≥ 42 = higher risk</div>
-<table>
-  <thead><tr><th>Validation cohort</th><th class="num">n</th><th class="num">AUC (95% CI)</th></tr></thead>
-  <tbody>
-    <tr><td>Derivation holdout (Penn, internal)</td><td class="num">84</td><td class="num">0.854 (0.775–0.934)</td></tr>
-    <tr><td>Prospective validation cohort (Penn, 2024–2026)</td><td class="num">250</td><td class="num">0.738 (0.676–0.799)</td></tr>
-    <tr><td>University of Louisville (independent site)</td><td class="num">731</td><td class="num">0.725 (0.688–0.762)</td></tr>
-  </tbody>
-</table>
+<div class="card cta">
+  <div>
+    <h2>Validate on your data</h2>
+    <p>Download a single-file tool that scores your whole cohort (both scores) locally. Nothing is uploaded.</p>
+  </div>
+  <a class="btn" href="https://github.com/Jonah-Keller/stroke-score-validator/releases/latest/download/validator.html">Download the validator</a>
+</div>
 
-<h2>CAPTaN (post-procedure)</h2>
-<div class="eq">CAPTaN = 22×Cancer + 1×Age + 2×Passes + 2×NIHSS − 7×mTICI &nbsp;·&nbsp; ≥ 86 = higher risk</div>
-<table>
-  <thead><tr><th>Validation cohort</th><th class="num">n</th><th class="num">AUC (95% CI)</th></tr></thead>
-  <tbody>
-    <tr><td>Derivation holdout (Penn, internal)</td><td class="num">84</td><td class="num">0.837 (0.750–0.923)</td></tr>
-    <tr><td>Prospective validation cohort (Penn, 2024–2026)</td><td class="num">250</td><td class="num">0.755 (0.683–0.822)</td></tr>
-    <tr><td>University of Louisville (independent site)</td><td class="num">731</td><td class="num">0.732 (0.697–0.771)</td></tr>
-  </tbody>
-</table>
+<section class="section" aria-labelledby="glance">
+  <h2 id="glance">At a glance</h2>
+  <div class="card flush"><div class="table-wrap">
+    <table class="glance">
+      <thead><tr><td></td><th scope="col">ASCEND <small>pre-procedure</small></th><th scope="col">CAPTaN <small>post-procedure</small></th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Variables</th>
+          <td>NIHSS, cancer, diabetes, non-ambulatory, pre-stroke mRS, smoking</td>
+          <td>Cancer, age, passes, NIHSS, mTICI</td></tr>
+        <tr><th scope="row">Equation</th>
+          <td class="eq-cell">ASCEND = 2×NIHSS + 22×Cancer + 7×Diabetes + 7×Non-ambulatory + 6×Pre-stroke mRS + 2×Smoking</td>
+          <td class="eq-cell">CAPTaN = 22×Cancer + 1×Age + 2×Passes + 2×NIHSS − 7×mTICI</td></tr>
+        <tr><th scope="row">Threshold</th><td>≥ 42 = higher risk</td><td>≥ 86 = higher risk</td></tr>
+        <tr><th scope="row">AUC (95% CI)<small>Derivation holdout (Penn, internal), n = 84</small></th>
+          <td class="auc">0.854 <small>(0.775–0.934)</small></td><td class="auc">0.837 <small>(0.750–0.923)</small></td></tr>
+        <tr><th scope="row">AUC (95% CI)<small>Prospective validation cohort (Penn, 2024–2026), n = 250</small></th>
+          <td class="auc">0.738 <small>(0.676–0.799)</small></td><td class="auc">0.755 <small>(0.683–0.822)</small></td></tr>
+        <tr><th scope="row">AUC (95% CI)<small>University of Louisville (independent site), n = 731</small></th>
+          <td class="auc">0.725 <small>(0.688–0.762)</small></td><td class="auc">0.732 <small>(0.697–0.771)</small></td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</section>
 
-<p><b>Validating on your own cohort</b> takes a few minutes: download the validator, open it (it runs in your browser, offline), load your spreadsheet, confirm the column matches, then click <b>Researcher export (de-identified)</b>. The export contains only computed scores, dichotomized outcomes and aggregate cohort characteristics — no PHI — and can be shared for pooled validation.</p>
+<section class="section" aria-labelledby="own">
+  <h2 id="own">Validating on your own cohort</h2>
+  <div class="card">
+    <p>It takes a few minutes:</p>
+    <ol class="steps">
+      <li><a href="https://github.com/Jonah-Keller/stroke-score-validator/releases/latest/download/validator.html">Download the validator</a>.</li>
+      <li>Open it — it runs in your browser, offline.</li>
+      <li>Load your spreadsheet.</li>
+      <li>Confirm the column matches.</li>
+      <li>Click <b>Researcher export (de-identified)</b>.</li>
+    </ol>
+    <p class="note">The export contains only computed scores, dichotomized outcomes and aggregate cohort characteristics — no PHI — and can be shared for pooled validation.</p>
+  </div>
+</section>
 
-<p class="fine">Research tool; not for sole clinical decision-making. Patient data is read and processed only in your browser; nothing leaves your machine.
-Source: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a></p>
+</div></main>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Research tool; not for sole clinical decision-making. Patient data is read and processed only in your browser; nothing leaves your machine.</p>
+  <p>Source and methods: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a></p>
+</div></footer>
 
 </body></html>
