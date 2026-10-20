@@ -29,6 +29,17 @@
 
   --focus: #1f6fd1;
 
+  /* risk label pills (all >= 4.5:1 for their text) */
+  --band-fav-bg: #0a7d32;   --band-fav-fg: #ffffff;
+  --band-mid-bg: #8a5a00;   --band-mid-fg: #ffffff;
+  --band-unfav-bg: #c62828; --band-unfav-fg: #ffffff;
+
+  /* chart */
+  --risk-shade: rgba(198, 40, 40, .06);
+  --obs-0: #7b4bb7;
+  --obs-1: #0f7f74;
+  --obs-2: #c2610c;
+
   --radius: 10px;
   --radius-sm: 6px;
   --shadow: 0 1px 2px rgba(16, 24, 40, .05);
@@ -62,6 +73,15 @@
 
     --focus: #8cbcf0;
     --shadow: none;
+
+    --band-fav-bg: #6fd396;   --band-fav-fg: #0b1a10;
+    --band-mid-bg: #e8b84a;   --band-mid-fg: #1d1500;
+    --band-unfav-bg: #f2918a; --band-unfav-fg: #2a0b0b;
+
+    --risk-shade: rgba(242, 145, 138, .08);
+    --obs-0: #b896ec;
+    --obs-1: #4fc3b4;
+    --obs-2: #f0a35e;
   }
 }
 
@@ -172,8 +192,8 @@ tr.hl td:first-child { box-shadow: inset 3px 0 0 var(--hl-bar); }
 .calc { display: grid; gap: 18px; margin: 0 0 18px; }
 .calc > .card { margin: 0; }
 @media (min-width: 820px) {
-  .calc { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; }
-  .calc .result-card { position: sticky; top: 16px; }
+  .calc { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; }
+  .calc .inputs-card { grid-row: span 2; }
 }
 
 .row {
@@ -202,8 +222,10 @@ select:focus-visible, input[type=number]:focus-visible { outline: 3px solid var(
 .score b { font-size: 22px; color: var(--text); font-variant-numeric: tabular-nums; }
 .big { font-size: 56px; font-weight: 800; line-height: 1.05; margin-top: 10px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .lbl { color: var(--text-2); font-size: 14px; margin-top: 4px; }
-/* background colour is set by the page script; 19px bold keeps white text legible (large-text contrast) */
-.band { display: inline-block; margin-top: 14px; padding: 5px 16px; border-radius: 999px; font-weight: 700; font-size: 19px; color: #fff; background: var(--muted); }
+.band { display: inline-block; margin-top: 14px; padding: 5px 16px; border-radius: 999px; font-weight: 700; font-size: 15px; color: var(--text); background: var(--surface-2); }
+.band-fav { background: var(--band-fav-bg); color: var(--band-fav-fg); }
+.band-mid { background: var(--band-mid-bg); color: var(--band-mid-fg); }
+.band-unfav { background: var(--band-unfav-bg); color: var(--band-unfav-fg); }
 .meta { color: var(--text-2); font-size: 13.5px; margin-top: 16px; text-align: center; }
 .disc { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--border-soft); padding-top: 14px; margin-top: 16px; }
 
@@ -256,3 +278,43 @@ select:focus-visible, input[type=number]:focus-visible { outline: 3px solid var(
 .steps { margin: 0; padding-left: 1.4em; }
 .steps li { margin: 0 0 6px; padding-left: 4px; }
 .steps li::marker { color: var(--accent); font-weight: 700; }
+
+/* ---------- counselling view (icon array) ---------- */
+.counsel { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-soft); text-align: center; }
+.counsel-text { font-size: 15px; color: var(--text); margin: 0 0 10px; min-height: 3.2em; }
+.icon-array { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; }
+.icon-array .ic-on { fill: var(--accent); }
+.icon-array .ic-off, .icon-array circle { fill: none; stroke: var(--border); stroke-width: 1.4; }
+.icon-array .ic-on { stroke: none; }
+.counsel[data-state="empty"] .icon-array, .counsel[data-state="empty"] .icon-key { visibility: hidden; }
+.icon-key { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+.icon-key .k { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+.icon-key .k-on { background: var(--accent); }
+.icon-key .k-off { border: 1.4px solid var(--border); }
+
+/* ---------- probability chart ---------- */
+.chart-legend { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--text-2); }
+.chart-legend li { display: inline-flex; align-items: center; gap: 5px; }
+.chart-legend svg { overflow: visible; }
+.chart-box { position: relative; }
+.chart-svg { display: block; width: 100%; height: auto; font-family: var(--font); }
+.chart-empty { display: none; position: absolute; inset: 0; margin: 0; align-items: center; justify-content: center; text-align: center; padding: 0 24px; color: var(--muted); font-size: 14px; }
+.chart[data-state="empty"] .chart-empty { display: flex; }
+.chart[data-state="empty"] .ch-patient { visibility: hidden; }
+.chart[data-state="empty"] .chart-svg { opacity: .35; }
+.chart-caption { margin-top: 8px; font-size: 12.5px; }
+.ch-grid { stroke: var(--border-soft); stroke-width: 1; }
+.ch-axis-line { stroke: var(--border); stroke-width: 1; }
+.ch-tick { fill: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ch-axis-title { fill: var(--text-2); font-size: 13px; font-weight: 600; }
+.ch-risk { fill: var(--risk-shade); }
+.ch-thr { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.ch-thr-label { fill: var(--muted); font-size: 12px; }
+.ch-curve { stroke: var(--accent); stroke-width: 2.4; fill: none; stroke-linejoin: round; }
+.ch-obs { stroke: var(--surface); stroke-width: .8; }
+.ch-obs-0 { fill: var(--obs-0); }
+.ch-obs-1 { fill: var(--obs-1); }
+.ch-obs-2 { fill: var(--obs-2); }
+.ch-guide { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.ch-dot { fill: var(--text); stroke: var(--surface); stroke-width: 2; }
+.ch-label { fill: var(--text); font-size: 14px; font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }

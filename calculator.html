@@ -27,7 +27,7 @@
 </div>
 
 <div class="calc">
-<section class="card" id="inputs" aria-labelledby="inputs-h">
+<section class="card inputs-card" id="inputs" aria-labelledby="inputs-h">
   <h2 class="section-title" id="inputs-h">Patient variables</h2>
   <div class="row"><label for="nihss">NIHSS at presentation</label><input type="number" id="nihss" min="0" max="42" value="12"></div>
   <div class="row"><label for="cancer">History of cancer <span>any prior diagnosis, incl. remission</span></label><select id="cancer"><option value="0">No</option><option value="1">Yes</option></select></div>
@@ -46,7 +46,13 @@
     <div class="band" id="band">—</div>
   </div>
   <div class="meta" id="meta"></div>
+  <div class="counsel" id="counsel"></div>
   <div class="disc">Prognostic estimate only. It informs, but does not replace, clinical judgment, and is not a directive to perform or withhold thrombectomy. Probabilities are calibrated to the derivation cohort (36.6% functional independence); centers with a materially different baseline outcome rate should interpret absolute probabilities accordingly.</div>
+</section>
+
+<section class="card chart-card" aria-labelledby="chart-h">
+  <h2 class="section-title" id="chart-h">Predicted probability by score</h2>
+  <div id="chart" class="chart"></div>
 </section>
 </div>
 
@@ -94,26 +100,28 @@
   <p>Source and methods: <a href="https://github.com/Jonah-Keller/stroke-score-validator">github.com/Jonah-Keller/stroke-score-validator</a></p>
 </div></footer>
 
+<script src="score-chart.js"></script>
 <script>
 // ASCEND score (published integer points)
 var POINTS={nihss:2,cancer:22,dm:7,ambul:7,premrs:6,smoke:2}, THR=42;
 // Probability of good outcome (mRS<=2): logistic calibrated to the derivation data (n=421).
 //   P(good) = 1 / (1 + exp(-(A + B*score)))
 var A=1.5419, B=-0.05129;
+function pGood(score){return 1/(1+Math.exp(-(A+B*score)));}   // P(good); used by the result card and the chart
 function val(id){var e=document.getElementById(id);var v=parseFloat(e.value);return isNaN(v)?0:v;}
 function compute(){
   var nihss=Math.max(0,Math.min(42,val("nihss")));
   var score=POINTS.nihss*nihss+POINTS.cancer*val("cancer")+POINTS.dm*val("dm")+
             POINTS.ambul*val("ambul")+POINTS.premrs*val("premrs")+POINTS.smoke*val("smoke");
-  var p=1/(1+Math.exp(-(A+B*score)));           // P(good)
+  var p=pGood(score);           // P(good)
   var pct=Math.round(p*100);
   document.getElementById("score").textContent=score;
   document.getElementById("pgood").textContent=pct+"%";
-  var band=document.getElementById("band"), col, txt;
-  if(p>=0.60){col="#0a7d32";txt="Favorable predicted outcome";}
-  else if(p>=0.35){col="#b8860b";txt="Intermediate";}
-  else{col="#c62828";txt="Unfavorable predicted outcome";}
-  band.style.background=col; band.textContent=txt;
+  var band=document.getElementById("band"), cls, txt;
+  if(p>=0.60){cls="fav";txt="Favorable predicted outcome";}
+  else if(p>=0.35){cls="mid";txt="Intermediate";}
+  else{cls="unfav";txt="Unfavorable predicted outcome";}
+  band.className="band band-"+cls; band.textContent=txt;   // colours: .band-* in site.css
   document.getElementById("meta").innerHTML=
     "Predicted probability of <b>poor outcome</b> (mRS 3–6) = <b>"+(100-pct)+"%</b>"+
     "<br>Published cutoff ≥ "+THR+": this patient is "+(score>=THR?"<b>≥ "+THR+"</b> (higher-risk band)":"<b>&lt; "+THR+"</b> (lower-risk band)")+".";
@@ -123,10 +131,12 @@ function compute(){
     var lo=+rows[i].getAttribute("data-lo"), hi=+rows[i].getAttribute("data-hi");
     rows[i].className=(score>=lo&&score<hi)?"hl":"";
   }
+  if(window.ScoreChart)ScoreChart.update(score,pct);
 }
 ["nihss","cancer","dm","ambul","premrs","smoke"].forEach(function(id){
   document.getElementById(id).addEventListener("input",compute);
   document.getElementById(id).addEventListener("change",compute);});
+if(window.ScoreChart)ScoreChart.init({name:"ASCEND",ids:["nihss","cancer","dm","ambul","premrs","smoke"],points:POINTS,thr:THR,pGood:pGood});
 compute();
 </script>
 </body></html>
